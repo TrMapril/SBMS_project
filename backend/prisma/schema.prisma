@@ -34,9 +34,11 @@ model Tenant {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  config TenantConfig?
-  users  User[]
-  roles  Role[]
+  config    TenantConfig?
+  users     User[]
+  roles     Role[]
+  workflows Workflow[]
+  tasks     Task[]
 
   @@map("tenants")
 }
@@ -64,8 +66,10 @@ model User {
   createdAt          DateTime   @default(now()) @map("created_at")
   updatedAt          DateTime   @updatedAt @map("updated_at")
 
-  tenant    Tenant?    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  userRoles UserRole[]
+  tenant           Tenant?       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userRoles        UserRole[]
+  assignedTasks    Task[]        @relation("TaskAssignee")
+  taskHistoryItems TaskHistory[] @relation("TaskHistoryActionBy")
 
   @@map("users")
 }
@@ -95,4 +99,115 @@ model UserRole {
 
   @@unique([userId, roleId])
   @@map("user_roles")
+}
+
+model Workflow {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  name      String
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant      Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  states      WorkflowState[]
+  transitions WorkflowTransition[]
+
+  @@map("workflows")
+}
+
+model WorkflowState {
+  id         String   @id @default(uuid())
+  workflowId String   @map("workflow_id")
+  name       String
+  isStart    Boolean  @default(false) @map("is_start")
+  isEnd      Boolean  @default(false) @map("is_end")
+  isActive   Boolean  @default(true) @map("is_active")
+  orderIndex Int      @default(0) @map("order_index")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  workflow            Workflow             @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  outgoingTransitions WorkflowTransition[] @relation("FromState")
+  incomingTransitions WorkflowTransition[] @relation("ToState")
+  tasks               Task[]
+  historyFrom         TaskHistory[]        @relation("HistoryFromState")
+  historyTo           TaskHistory[]        @relation("HistoryToState")
+
+  @@map("workflow_states")
+}
+
+model WorkflowTransition {
+  id          String   @id @default(uuid())
+  workflowId  String   @map("workflow_id")
+  fromStateId String   @map("from_state_id")
+  toStateId   String   @map("to_state_id")
+  name        String
+  allowRoles  Json     @default("[]") @map("allow_roles")
+  condition   Json?    @map("condition")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  workflow    Workflow      @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  fromState   WorkflowState @relation("FromState", fields: [fromStateId], references: [id], onDelete: Cascade)
+  toState     WorkflowState @relation("ToState", fields: [toStateId], references: [id], onDelete: Cascade)
+  taskHistory TaskHistory[]
+
+  @@map("workflow_transitions")
+}
+
+model WorkflowTemplate {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  /// Snapshot cấu trúc states+transitions dùng để clone khi import (Mục 3.10 CLAUDE.md).
+  definition  Json
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("workflow_templates")
+}
+
+/// Bảng tasks tối giản chỉ đủ field để test WorkflowEngineService ở Giai đoạn 2
+/// (title, assigneeId, customFieldValues dùng để test "condition"). Giai đoạn 3 sẽ mở rộng
+/// thêm description/priority/projectId — không xoá lại các cột đã có ở đây.
+model Task {
+  id                String   @id @default(uuid())
+  tenantId          String   @map("tenant_id")
+  title             String
+  currentStateId    String   @map("current_state_id")
+  assigneeId        String?  @map("assignee_id")
+  /// Placeholder JSON cho custom field values (Giai đoạn 2 chưa có bảng custom_fields thật —
+  /// xem Giai đoạn 3). Dùng để test condition.requireCustomFields của Transition.
+  customFieldValues Json     @default("{}") @map("custom_field_values")
+  version           Int      @default(1)
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  currentState WorkflowState @relation(fields: [currentStateId], references: [id])
+  assignee     User?         @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  history      TaskHistory[]
+
+  @@map("tasks")
+}
+
+model TaskHistory {
+  id           String   @id @default(uuid())
+  taskId       String   @map("task_id")
+  fromStateId  String?  @map("from_state_id")
+  toStateId    String   @map("to_state_id")
+  transitionId String?  @map("transition_id")
+  actionBy     String   @map("action_by")
+  actionAt     DateTime @default(now()) @map("action_at")
+  comment      String?
+
+  task         Task                @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  fromState    WorkflowState?      @relation("HistoryFromState", fields: [fromStateId], references: [id])
+  toState      WorkflowState       @relation("HistoryToState", fields: [toStateId], references: [id])
+  transition   WorkflowTransition? @relation(fields: [transitionId], references: [id])
+  actionByUser User                @relation("TaskHistoryActionBy", fields: [actionBy], references: [id])
+
+  @@map("task_history")
 }
