@@ -77,6 +77,14 @@ export class WorkflowService {
         'Không thể xoá Workflow đang có Task sử dụng, hãy set is_active = false',
       );
     }
+    const projectCount = await this.prisma.project.count({
+      where: { workflowId: id },
+    });
+    if (projectCount > 0) {
+      throw new BadRequestException(
+        'Không thể xoá Workflow đang được Project sử dụng, hãy set is_active = false',
+      );
+    }
     await this.prisma.workflow.delete({ where: { id } });
     return { id };
   }

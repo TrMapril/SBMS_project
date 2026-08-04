@@ -86,6 +86,18 @@ async function main() {
     create: { userId: employee.id, roleId: developerRole.id },
   });
 
+  // ---------- Giai đoạn 3: Custom Field mẫu (Task 3/4 dùng để test condition) ----------
+  const testNotesField = await prisma.customField.upsert({
+    where: { tenantId_name: { tenantId: tenant.id, name: 'Test Notes' } },
+    update: {},
+    create: {
+      tenantId: tenant.id,
+      name: 'Test Notes',
+      fieldType: 'TEXT',
+      isRequired: true,
+    },
+  });
+
   // ---------- Giai đoạn 2: workflow mẫu dạng directed graph có vòng lặp ----------
   let workflow = await prisma.workflow.findFirst({
     where: { tenantId: tenant.id, name: 'Software Development' },
@@ -141,7 +153,7 @@ async function main() {
           fromStateId: development.id,
           toStateId: review.id,
           allowRoles: [developerRole.id],
-          condition: { requireCustomFields: ['test-notes'] },
+          condition: { requireCustomFields: [testNotesField.id] },
         },
         {
           workflowId: workflow.id,
@@ -180,33 +192,84 @@ async function main() {
         },
       ],
     });
+  }
 
-    await prisma.task.createMany({
-      data: [
-        {
-          tenantId: tenant.id,
-          title: 'Demo Task 1 - tại Backlog',
-          currentStateId: backlog.id,
-        },
-        {
-          tenantId: tenant.id,
-          title: 'Demo Task 2 - tại Ready (chưa có assignee)',
-          currentStateId: ready.id,
-        },
-        {
-          tenantId: tenant.id,
-          title: 'Demo Task 3 - tại Development (thiếu custom field)',
-          currentStateId: development.id,
-          assigneeId: employee.id,
-        },
-        {
-          tenantId: tenant.id,
-          title: 'Demo Task 4 - tại Development (đủ điều kiện Submit for Review)',
-          currentStateId: development.id,
-          assigneeId: employee.id,
-          customFieldValues: { 'test-notes': 'Đã kiểm tra local' },
-        },
-      ],
+  // Đảm bảo transition "Submit for Review" luôn trỏ đúng id thật của CustomField "Test Notes"
+  // — cần chạy độc lập với khối `if (!workflow)` ở trên vì workflow này có thể đã tồn tại từ
+  // trước khi CustomField "Test Notes" được tạo (ví dụ dữ liệu tạo ở Giai đoạn 2), lúc đó
+  // condition vẫn còn giữ placeholder chuỗi 'test-notes' cũ chứ không phải id thật.
+  await prisma.workflowTransition.updateMany({
+    where: { workflowId: workflow.id, name: 'Submit for Review' },
+    data: { condition: { requireCustomFields: [testNotesField.id] } },
+  });
+
+  // ---------- Giai đoạn 3: Project gắn 1-1 với Workflow ở trên ----------
+  let project = await prisma.project.findFirst({
+    where: { tenantId: tenant.id, name: 'Website Redesign' },
+  });
+  if (!project) {
+    project = await prisma.project.create({
+      data: { tenantId: tenant.id, name: 'Website Redesign', workflowId: workflow.id },
+    });
+  }
+
+  await prisma.projectMember.upsert({
+    where: { projectId_userId: { projectId: project.id, userId: manager.id } },
+    update: {},
+    create: { projectId: project.id, userId: manager.id },
+  });
+  await prisma.projectMember.upsert({
+    where: { projectId_userId: { projectId: project.id, userId: employee.id } },
+    update: {},
+    create: { projectId: project.id, userId: employee.id },
+  });
+
+  // ---------- Giai đoạn 3: 4 Task mẫu gắn Project, dùng để test WorkflowEngineService ----------
+  const existingTaskCount = await prisma.task.count({ where: { projectId: project.id } });
+  if (existingTaskCount === 0) {
+    const states = await prisma.workflowState.findMany({ where: { workflowId: workflow.id } });
+    const stateIdByName = Object.fromEntries(states.map((s) => [s.name, s.id]));
+
+    await prisma.task.create({
+      data: {
+        tenantId: tenant.id,
+        projectId: project.id,
+        title: 'Demo Task 1 - tại Backlog',
+        currentStateId: stateIdByName['Backlog'],
+      },
+    });
+    await prisma.task.create({
+      data: {
+        tenantId: tenant.id,
+        projectId: project.id,
+        title: 'Demo Task 2 - tại Ready (chưa có assignee)',
+        currentStateId: stateIdByName['Ready'],
+      },
+    });
+    await prisma.task.create({
+      data: {
+        tenantId: tenant.id,
+        projectId: project.id,
+        title: 'Demo Task 3 - tại Development (thiếu custom field)',
+        currentStateId: stateIdByName['Development'],
+        assigneeId: employee.id,
+      },
+    });
+    const task4 = await prisma.task.create({
+      data: {
+        tenantId: tenant.id,
+        projectId: project.id,
+        title: 'Demo Task 4 - tại Development (đủ điều kiện Submit for Review)',
+        currentStateId: stateIdByName['Development'],
+        assigneeId: employee.id,
+      },
+    });
+    await prisma.customFieldValue.create({
+      data: {
+        taskId: task4.id,
+        customFieldId: testNotesField.id,
+        value: 'Đã kiểm tra local',
+      },
     });
   }
 

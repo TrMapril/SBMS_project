@@ -8,6 +8,8 @@ import { UsersModule } from './users/users.module';
 import { RolesModule } from './roles/roles.module';
 import { WorkflowModule } from './workflow/workflow.module';
 import { TasksModule } from './tasks/tasks.module';
+import { ProjectsModule } from './projects/projects.module';
+import { CustomFieldsModule } from './custom-fields/custom-fields.module';
 
 @Module({
   imports: [
@@ -17,6 +19,8 @@ import { TasksModule } from './tasks/tasks.module';
     UsersModule,
     RolesModule,
     WorkflowModule,
+    ProjectsModule,
+    CustomFieldsModule,
     TasksModule,
   ],
   controllers: [AppController],

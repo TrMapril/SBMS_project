@@ -85,7 +85,7 @@ export class WorkflowEngineService {
     await this.assertRolePermission(userId, transition);
 
     // Bước 4: kiểm tra condition — chỉ 2 loại (Mục 3.5)
-    this.assertCondition(transition, task);
+    await this.assertCondition(transition, task);
 
     // Bước 5 + 6: update kèm optimistic locking + ghi task_history, atomic trong 1 transaction
     await this.prisma.$transaction(async (tx) => {
@@ -138,9 +138,9 @@ export class WorkflowEngineService {
     }
   }
 
-  private assertCondition(
+  private async assertCondition(
     transition: WorkflowTransition,
-    task: { assigneeId: string | null; customFieldValues: unknown },
+    task: { id: string; assigneeId: string | null },
   ) {
     const condition =
       (transition.condition as TransitionCondition | null) ?? null;
@@ -156,11 +156,18 @@ export class WorkflowEngineService {
       condition.requireCustomFields &&
       condition.requireCustomFields.length > 0
     ) {
-      const values = (task.customFieldValues as Record<string, unknown>) ?? {};
-      const missing = condition.requireCustomFields.filter((fieldId) => {
-        const value = values[fieldId];
-        return value === undefined || value === null || value === '';
+      const existingValues = await this.prisma.customFieldValue.findMany({
+        where: {
+          taskId: task.id,
+          customFieldId: { in: condition.requireCustomFields },
+          NOT: { value: '' },
+        },
+        select: { customFieldId: true },
       });
+      const filledIds = new Set(existingValues.map((v) => v.customFieldId));
+      const missing = condition.requireCustomFields.filter(
+        (fieldId) => !filledIds.has(fieldId),
+      );
       if (missing.length > 0) {
         throw new BadRequestException(
           `Thiếu Custom Field bắt buộc: ${missing.join(', ')}`,

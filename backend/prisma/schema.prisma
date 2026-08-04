@@ -27,6 +27,24 @@ enum UserStatus {
   @@map("user_status")
 }
 
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+
+  @@map("task_priority")
+}
+
+enum CustomFieldType {
+  TEXT
+  NUMBER
+  DATE
+  BOOLEAN
+
+  @@map("custom_field_type")
+}
+
 model Tenant {
   id        String   @id @default(uuid())
   name      String
@@ -34,11 +52,13 @@ model Tenant {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  config    TenantConfig?
-  users     User[]
-  roles     Role[]
-  workflows Workflow[]
-  tasks     Task[]
+  config       TenantConfig?
+  users        User[]
+  roles        Role[]
+  workflows    Workflow[]
+  tasks        Task[]
+  projects     Project[]
+  customFields CustomField[]
 
   @@map("tenants")
 }
@@ -66,10 +86,11 @@ model User {
   createdAt          DateTime   @default(now()) @map("created_at")
   updatedAt          DateTime   @updatedAt @map("updated_at")
 
-  tenant           Tenant?       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  userRoles        UserRole[]
-  assignedTasks    Task[]        @relation("TaskAssignee")
-  taskHistoryItems TaskHistory[] @relation("TaskHistoryActionBy")
+  tenant             Tenant?         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userRoles          UserRole[]
+  assignedTasks      Task[]          @relation("TaskAssignee")
+  taskHistoryItems   TaskHistory[]   @relation("TaskHistoryActionBy")
+  projectMemberships ProjectMember[]
 
   @@map("users")
 }
@@ -112,6 +133,7 @@ model Workflow {
   tenant      Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   states      WorkflowState[]
   transitions WorkflowTransition[]
+  projects    Project[]
 
   @@map("workflows")
 }
@@ -169,28 +191,92 @@ model WorkflowTemplate {
   @@map("workflow_templates")
 }
 
-/// Bảng tasks tối giản chỉ đủ field để test WorkflowEngineService ở Giai đoạn 2
-/// (title, assigneeId, customFieldValues dùng để test "condition"). Giai đoạn 3 sẽ mở rộng
-/// thêm description/priority/projectId — không xoá lại các cột đã có ở đây.
 model Task {
-  id                String   @id @default(uuid())
-  tenantId          String   @map("tenant_id")
-  title             String
-  currentStateId    String   @map("current_state_id")
-  assigneeId        String?  @map("assignee_id")
-  /// Placeholder JSON cho custom field values (Giai đoạn 2 chưa có bảng custom_fields thật —
-  /// xem Giai đoạn 3). Dùng để test condition.requireCustomFields của Transition.
-  customFieldValues Json     @default("{}") @map("custom_field_values")
-  version           Int      @default(1)
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @updatedAt @map("updated_at")
+  id             String       @id @default(uuid())
+  tenantId       String       @map("tenant_id")
+  projectId      String       @map("project_id")
+  title          String
+  description    String?
+  currentStateId String       @map("current_state_id")
+  assigneeId     String?      @map("assignee_id")
+  priority       TaskPriority @default(MEDIUM)
+  version        Int          @default(1)
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
 
-  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  currentState WorkflowState @relation(fields: [currentStateId], references: [id])
-  assignee     User?         @relation("TaskAssignee", fields: [assigneeId], references: [id])
-  history      TaskHistory[]
+  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project           Project            @relation(fields: [projectId], references: [id])
+  currentState      WorkflowState      @relation(fields: [currentStateId], references: [id])
+  assignee          User?              @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  history           TaskHistory[]
+  customFieldValues CustomFieldValue[]
 
   @@map("tasks")
+}
+
+model Project {
+  id         String   @id @default(uuid())
+  tenantId   String   @map("tenant_id")
+  workflowId String   @map("workflow_id")
+  name       String
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  tenant   Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workflow Workflow        @relation(fields: [workflowId], references: [id])
+  members  ProjectMember[]
+  tasks    Task[]
+
+  @@map("projects")
+}
+
+model ProjectMember {
+  id        String   @id @default(uuid())
+  projectId String   @map("project_id")
+  userId    String   @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@map("project_members")
+}
+
+/// Định nghĩa Custom Field theo tenant (Admin CRUD) — Mục "hướng mở rộng trong tương lai" ở
+/// DECISIONS.md đã ghi rõ: scope theo Workflow là mở rộng sau, hiện tại field dùng chung tenant.
+model CustomField {
+  id           String          @id @default(uuid())
+  tenantId     String          @map("tenant_id")
+  name         String
+  fieldType    CustomFieldType @map("field_type")
+  isRequired   Boolean         @default(false) @map("is_required")
+  defaultValue String?         @map("default_value")
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+
+  tenant Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  values CustomFieldValue[]
+
+  @@unique([tenantId, name])
+  @@map("custom_fields")
+}
+
+/// Giá trị lưu dạng text bất kể fieldType (TEXT/NUMBER/DATE/BOOLEAN) — chuẩn hoá/validate theo
+/// đúng kiểu ở tầng Service khi ghi (Mục 3.5/3.6 CLAUDE.md: không xây rule engine tổng quát).
+model CustomFieldValue {
+  id            String   @id @default(uuid())
+  taskId        String   @map("task_id")
+  customFieldId String   @map("custom_field_id")
+  value         String
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  task        Task        @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  customField CustomField @relation(fields: [customFieldId], references: [id])
+
+  @@unique([taskId, customFieldId])
+  @@map("custom_field_values")
 }
 
 model TaskHistory {

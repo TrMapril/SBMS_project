@@ -256,3 +256,86 @@ CREATE POLICY task_history_tenant_isolation ON task_history
         AND tasks.tenant_id = current_setting('app.current_tenant_id', true)
     )
   );
+
+-- ============================================================================
+-- Giai đoạn 3: projects, project_members, custom_fields, custom_field_values
+-- ============================================================================
+
+ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE projects FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS projects_tenant_isolation ON projects;
+CREATE POLICY projects_tenant_isolation ON projects
+  FOR ALL
+  USING (
+    current_setting('app.is_super_admin', true) = 'true'
+    OR tenant_id = current_setting('app.current_tenant_id', true)
+  )
+  WITH CHECK (
+    current_setting('app.is_super_admin', true) = 'true'
+    OR tenant_id = current_setting('app.current_tenant_id', true)
+  );
+
+-- project_members không có cột tenant_id riêng, xét qua projects.tenant_id (project_id).
+ALTER TABLE project_members ENABLE ROW LEVEL SECURITY;
+ALTER TABLE project_members FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS project_members_tenant_isolation ON project_members;
+CREATE POLICY project_members_tenant_isolation ON project_members
+  FOR ALL
+  USING (
+    current_setting('app.is_super_admin', true) = 'true'
+    OR EXISTS (
+      SELECT 1 FROM projects
+      WHERE projects.id = project_members.project_id
+        AND projects.tenant_id = current_setting('app.current_tenant_id', true)
+    )
+  )
+  WITH CHECK (
+    current_setting('app.is_super_admin', true) = 'true'
+    OR EXISTS (
+      SELECT 1 FROM projects
+      WHERE projects.id = project_members.project_id
+        AND projects.tenant_id = current_setting('app.current_tenant_id', true)
+    )
+  );
+
+ALTER TABLE custom_fields ENABLE ROW LEVEL SECURITY;
+ALTER TABLE custom_fields FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS custom_fields_tenant_isolation ON custom_fields;
+CREATE POLICY custom_fields_tenant_isolation ON custom_fields
+  FOR ALL
+  USING (
+    current_setting('app.is_super_admin', true) = 'true'
+    OR tenant_id = current_setting('app.current_tenant_id', true)
+  )
+  WITH CHECK (
+    current_setting('app.is_super_admin', true) = 'true'
+    OR tenant_id = current_setting('app.current_tenant_id', true)
+  );
+
+-- custom_field_values không có cột tenant_id riêng, xét qua tasks.tenant_id (task_id) — cùng
+-- kiểu quan hệ "bảng giá trị/log gắn theo Task" như task_history.
+ALTER TABLE custom_field_values ENABLE ROW LEVEL SECURITY;
+ALTER TABLE custom_field_values FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS custom_field_values_tenant_isolation ON custom_field_values;
+CREATE POLICY custom_field_values_tenant_isolation ON custom_field_values
+  FOR ALL
+  USING (
+    current_setting('app.is_super_admin', true) = 'true'
+    OR EXISTS (
+      SELECT 1 FROM tasks
+      WHERE tasks.id = custom_field_values.task_id
+        AND tasks.tenant_id = current_setting('app.current_tenant_id', true)
+    )
+  )
+  WITH CHECK (
+    current_setting('app.is_super_admin', true) = 'true'
+    OR EXISTS (
+      SELECT 1 FROM tasks
+      WHERE tasks.id = custom_field_values.task_id
+        AND tasks.tenant_id = current_setting('app.current_tenant_id', true)
+    )
+  );
