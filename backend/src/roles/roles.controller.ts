@@ -20,6 +20,8 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { TenantInterceptor } from '../common/interceptors/tenant.interceptor';
 import { CurrentTenant } from '../common/decorators/current-tenant.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import type { JwtPayload } from '../common/types/jwt-payload.type';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('ADMIN')
@@ -39,6 +41,19 @@ export class RolesController {
     @Query() pagination: PaginationQueryDto,
   ) {
     return this.rolesService.findAll(tenantId, pagination);
+  }
+
+  // @Roles() rỗng ghi đè @Roles('ADMIN') ở mức controller — mở cho mọi thành viên tenant đã
+  // đăng nhập tự tra Custom Role của chính mình (Task Board Giai đoạn 4 cần để ẩn/hiện nút
+  // Transition theo quyền, không được lộ toàn bộ danh sách Custom Role như GET /api/roles).
+  // Đặt TRƯỚC @Get(':id') để Nest không khớp "me" vào tham số :id.
+  @Roles()
+  @Get('me')
+  findMyRoles(
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.rolesService.findMyRoles(tenantId, user.userId);
   }
 
   @Get(':id')

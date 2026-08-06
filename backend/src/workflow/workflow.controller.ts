@@ -24,13 +24,17 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { TenantInterceptor } from '../common/interceptors/tenant.interceptor';
 import { CurrentTenant } from '../common/decorators/current-tenant.decorator';
 
+// Đọc (GET) mở cho mọi thành viên tenant đã đăng nhập — Task Board (Giai đoạn 4) cần đọc
+// workflow_states/workflow_transitions của project để vẽ Kanban, kể cả Employee. Chỉ các hành
+// động GHI (tạo/sửa/xoá Workflow Builder) mới giới hạn Admin, gắn @Roles('ADMIN') riêng từng
+// method thay vì ở mức controller.
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('ADMIN')
 @UseInterceptors(TenantInterceptor)
 @Controller('workflows')
 export class WorkflowController {
   constructor(private readonly workflowService: WorkflowService) {}
 
+  @Roles('ADMIN')
   @Post()
   createWorkflow(
     @CurrentTenant() tenantId: string,
@@ -52,6 +56,7 @@ export class WorkflowController {
     return this.workflowService.findOneWorkflow(tenantId, id);
   }
 
+  @Roles('ADMIN')
   @Patch(':id')
   updateWorkflow(
     @CurrentTenant() tenantId: string,
@@ -61,11 +66,13 @@ export class WorkflowController {
     return this.workflowService.updateWorkflow(tenantId, id, dto);
   }
 
+  @Roles('ADMIN')
   @Delete(':id')
   removeWorkflow(@CurrentTenant() tenantId: string, @Param('id') id: string) {
     return this.workflowService.removeWorkflow(tenantId, id);
   }
 
+  @Roles('ADMIN')
   @Post(':id/states')
   createState(
     @CurrentTenant() tenantId: string,
@@ -83,6 +90,7 @@ export class WorkflowController {
     return this.workflowService.findAllStates(tenantId, workflowId);
   }
 
+  @Roles('ADMIN')
   @Patch(':id/states/:stateId')
   updateState(
     @CurrentTenant() tenantId: string,
@@ -93,6 +101,7 @@ export class WorkflowController {
     return this.workflowService.updateState(tenantId, workflowId, stateId, dto);
   }
 
+  @Roles('ADMIN')
   @Delete(':id/states/:stateId')
   removeState(
     @CurrentTenant() tenantId: string,
@@ -102,6 +111,7 @@ export class WorkflowController {
     return this.workflowService.removeState(tenantId, workflowId, stateId);
   }
 
+  @Roles('ADMIN')
   @Post(':id/transitions')
   createTransition(
     @CurrentTenant() tenantId: string,
@@ -119,6 +129,7 @@ export class WorkflowController {
     return this.workflowService.findAllTransitions(tenantId, workflowId);
   }
 
+  @Roles('ADMIN')
   @Patch(':id/transitions/:transitionId')
   updateTransition(
     @CurrentTenant() tenantId: string,
@@ -134,6 +145,7 @@ export class WorkflowController {
     );
   }
 
+  @Roles('ADMIN')
   @Delete(':id/transitions/:transitionId')
   removeTransition(
     @CurrentTenant() tenantId: string,

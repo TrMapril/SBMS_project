@@ -91,6 +91,40 @@ export class WorkflowService {
 
   // ---------- Workflow State ----------
 
+  /**
+   * Task Board hiển thị cột theo `order_index`, nhưng Workflow Builder không có ô nhập thứ tự
+   * riêng — người dùng "sắp xếp thứ tự flow" bằng cách kéo-thả vị trí trái→phải trên canvas.
+   * Vì vậy mỗi khi 1 State được tạo/kéo tới vị trí mới, tính lại `order_index` cho TOÀN BỘ State
+   * đang active của Workflow theo thứ tự `position_x` tăng dần, để Kanban luôn khớp đúng thứ tự
+   * hình dung trên canvas. State chưa từng có toạ độ (null) xếp sau cùng, giữ nguyên thứ tự
+   * tương đối theo `order_index` cũ giữa chúng với nhau.
+   */
+  private async resyncOrderIndexByPosition(workflowId: string) {
+    const states = await this.prisma.workflowState.findMany({
+      where: { workflowId, isActive: true },
+      orderBy: { orderIndex: 'asc' },
+    });
+    const positioned = states
+      .filter((s) => s.positionX != null)
+      .sort((a, b) => a.positionX! - b.positionX!);
+    const unpositioned = states.filter((s) => s.positionX == null);
+    const ordered = [...positioned, ...unpositioned];
+
+    const updates = ordered
+      .map((s, targetIndex) => ({ id: s.id, targetIndex, currentIndex: s.orderIndex }))
+      .filter((u) => u.targetIndex !== u.currentIndex);
+    if (updates.length === 0) return;
+
+    await this.prisma.$transaction(
+      updates.map((u) =>
+        this.prisma.workflowState.update({
+          where: { id: u.id },
+          data: { orderIndex: u.targetIndex },
+        }),
+      ),
+    );
+  }
+
   async createState(
     tenantId: string,
     workflowId: string,
@@ -98,8 +132,9 @@ export class WorkflowService {
   ) {
     await this.assertWorkflowInTenant(tenantId, workflowId);
 
+    let created;
     if (dto.isStart) {
-      return this.prisma.$transaction(async (tx) => {
+      created = await this.prisma.$transaction(async (tx) => {
         await tx.workflowState.updateMany({
           where: { workflowId, isStart: true },
           data: { isStart: false },
@@ -111,19 +146,31 @@ export class WorkflowService {
             isStart: true,
             isEnd: dto.isEnd ?? false,
             orderIndex: dto.orderIndex ?? 0,
+            positionX: dto.positionX,
+            positionY: dto.positionY,
           },
         });
       });
+    } else {
+      created = await this.prisma.workflowState.create({
+        data: {
+          workflowId,
+          name: dto.name,
+          isEnd: dto.isEnd ?? false,
+          orderIndex: dto.orderIndex ?? 0,
+          positionX: dto.positionX,
+          positionY: dto.positionY,
+        },
+      });
     }
 
-    return this.prisma.workflowState.create({
-      data: {
-        workflowId,
-        name: dto.name,
-        isEnd: dto.isEnd ?? false,
-        orderIndex: dto.orderIndex ?? 0,
-      },
-    });
+    if (dto.positionX != null) {
+      await this.resyncOrderIndexByPosition(workflowId);
+      return this.prisma.workflowState.findUniqueOrThrow({
+        where: { id: created.id },
+      });
+    }
+    return created;
   }
 
   async findAllStates(tenantId: string, workflowId: string) {
@@ -154,19 +201,21 @@ export class WorkflowService {
     await this.assertStateInWorkflow(workflowId, stateId);
 
     if (dto.isStart) {
-      return this.prisma.$transaction(async (tx) => {
+      await this.prisma.$transaction(async (tx) => {
         await tx.workflowState.updateMany({
           where: { workflowId, isStart: true, id: { not: stateId } },
           data: { isStart: false },
         });
-        return tx.workflowState.update({ where: { id: stateId }, data: dto });
+        await tx.workflowState.update({ where: { id: stateId }, data: dto });
       });
+    } else {
+      await this.prisma.workflowState.update({ where: { id: stateId }, data: dto });
     }
 
-    return this.prisma.workflowState.update({
-      where: { id: stateId },
-      data: dto,
-    });
+    if (dto.positionX != null) {
+      await this.resyncOrderIndexByPosition(workflowId);
+    }
+    return this.prisma.workflowState.findUniqueOrThrow({ where: { id: stateId } });
   }
 
   async removeState(tenantId: string, workflowId: string, stateId: string) {

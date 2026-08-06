@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -10,10 +11,32 @@ import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { AddProjectMemberDto } from './dto/add-project-member.dto';
+import type { JwtPayload } from '../common/types/jwt-payload.type';
 
 @Injectable()
 export class ProjectsService {
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Employee chỉ được xem Project mà họ là project_member HOẶC đang có Task được giao trong đó
+   * — Admin/Manager xem toàn bộ Project trong tenant, không bị chặn ở đây. Dùng chung cho
+   * ProjectsService (GET :id, :id/members) và TasksService (GET ?projectId=...) — TasksModule
+   * inject ProjectsService để gọi lại đúng 1 chỗ, không lặp logic ở 2 service.
+   */
+  async assertEmployeeCanAccessProject(projectId: string, requester: JwtPayload) {
+    if (requester.systemRole !== 'EMPLOYEE') return;
+    const isMember = await this.prisma.projectMember.findUnique({
+      where: { projectId_userId: { projectId, userId: requester.userId } },
+    });
+    if (isMember) return;
+    const taskCount = await this.prisma.task.count({
+      where: { projectId, assigneeId: requester.userId },
+    });
+    if (taskCount > 0) return;
+    throw new ForbiddenException(
+      'Bạn không phải thành viên và không có Task nào trong Project này',
+    );
+  }
 
   private async assertWorkflowInTenant(tenantId: string, workflowId: string) {
     const workflow = await this.prisma.workflow.findFirst({
@@ -46,13 +69,36 @@ export class ProjectsService {
     return { data, total, page, limit };
   }
 
-  async findOne(tenantId: string, id: string) {
+  /**
+   * `requester` chỉ truyền khi gọi từ endpoint GET công khai cho mọi role (để enforce quyền
+   * Employee) — các chỗ gọi nội bộ khác (update/remove/addMember/...) đều đã bị chặn Manager-only
+   * ở Controller nên không cần kiểm tra thêm, bỏ qua tham số này (Employee không bao giờ tới
+   * được các nhánh đó).
+   */
+  async findOne(tenantId: string, id: string, requester?: JwtPayload) {
     const project = await this.prisma.project.findFirst({
       where: { id, tenantId },
-      include: { members: true },
+      include: {
+        members: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                email: true,
+                fullName: true,
+                systemRole: true,
+                status: true,
+              },
+            },
+          },
+        },
+      },
     });
     if (!project) {
       throw new NotFoundException('Không tìm thấy Project');
+    }
+    if (requester) {
+      await this.assertEmployeeCanAccessProject(id, requester);
     }
     return project;
   }
@@ -120,8 +166,8 @@ export class ProjectsService {
     }
   }
 
-  async listMembers(tenantId: string, projectId: string) {
-    await this.findOne(tenantId, projectId);
+  async listMembers(tenantId: string, projectId: string, requester?: JwtPayload) {
+    await this.findOne(tenantId, projectId, requester);
     return this.prisma.projectMember.findMany({
       where: { projectId },
       include: {

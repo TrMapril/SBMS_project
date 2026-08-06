@@ -20,13 +20,16 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { TenantInterceptor } from '../common/interceptors/tenant.interceptor';
 import { CurrentTenant } from '../common/decorators/current-tenant.decorator';
 
+// Đọc (GET) mở cho mọi thành viên tenant đã đăng nhập — cần để UI dịch customFieldId sang tên
+// field dễ hiểu khi hiển thị lỗi "thiếu Custom Field bắt buộc" ở Task Board (Giai đoạn 4). Chỉ
+// hành động GHI (tạo/sửa/xoá định nghĩa field) mới giới hạn Admin.
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('ADMIN')
 @UseInterceptors(TenantInterceptor)
 @Controller('custom-fields')
 export class CustomFieldsController {
   constructor(private readonly customFieldsService: CustomFieldsService) {}
 
+  @Roles('ADMIN')
   @Post()
   create(@CurrentTenant() tenantId: string, @Body() dto: CreateCustomFieldDto) {
     return this.customFieldsService.create(tenantId, dto);
@@ -45,6 +48,7 @@ export class CustomFieldsController {
     return this.customFieldsService.findOne(tenantId, id);
   }
 
+  @Roles('ADMIN')
   @Patch(':id')
   update(
     @CurrentTenant() tenantId: string,
@@ -54,6 +58,7 @@ export class CustomFieldsController {
     return this.customFieldsService.update(tenantId, id, dto);
   }
 
+  @Roles('ADMIN')
   @Delete(':id')
   remove(@CurrentTenant() tenantId: string, @Param('id') id: string) {
     return this.customFieldsService.remove(tenantId, id);

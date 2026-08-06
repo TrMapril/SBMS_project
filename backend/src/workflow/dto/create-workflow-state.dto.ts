@@ -1,6 +1,7 @@
 import {
   IsBoolean,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   MinLength,
@@ -22,4 +23,12 @@ export class CreateWorkflowStateDto {
   @IsOptional()
   @IsInt()
   orderIndex?: number;
+
+  @IsOptional()
+  @IsNumber()
+  positionX?: number;
+
+  @IsOptional()
+  @IsNumber()
+  positionY?: number;
 }

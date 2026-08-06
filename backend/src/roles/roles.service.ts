@@ -45,9 +45,27 @@ export class RolesService {
     return { data, total, page, limit };
   }
 
+  /** Custom Role của chính user gọi — dùng để FE tự xét ẩn/hiện nút Transition theo quyền. */
+  async findMyRoles(tenantId: string, userId: string) {
+    const userRoles = await this.prisma.userRole.findMany({
+      where: { userId, role: { tenantId } },
+      include: { role: true },
+    });
+    return userRoles.map((ur) => ur.role);
+  }
+
   async findOne(tenantId: string, id: string) {
     const role = await this.prisma.role.findFirst({
       where: { id, tenantId },
+      include: {
+        userRoles: {
+          include: {
+            user: {
+              select: { id: true, email: true, fullName: true, systemRole: true },
+            },
+          },
+        },
+      },
     });
     if (!role) {
       throw new NotFoundException('Không tìm thấy Custom Role');

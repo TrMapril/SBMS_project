@@ -9,10 +9,31 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
+import { UpdateTenantConfigDto } from './dto/update-tenant-config.dto';
 
 @Injectable()
 export class TenantsService {
   constructor(private readonly prisma: PrismaService) {}
+
+  /** Admin của tenant tự xem/sửa Settings (theme, module bật/tắt) — khác với CRUD tenant ở
+   * trên vốn chỉ Super Admin dùng để quản lý toàn bộ tenant trong hệ thống. */
+  async getMyConfig(tenantId: string) {
+    const config = await this.prisma.tenantConfig.findUnique({
+      where: { tenantId },
+    });
+    if (!config) {
+      throw new NotFoundException('Không tìm thấy tenant_config');
+    }
+    return config;
+  }
+
+  async updateMyConfig(tenantId: string, dto: UpdateTenantConfigDto) {
+    await this.getMyConfig(tenantId);
+    return this.prisma.tenantConfig.update({
+      where: { tenantId },
+      data: dto,
+    });
+  }
 
   async create(dto: CreateTenantDto) {
     try {

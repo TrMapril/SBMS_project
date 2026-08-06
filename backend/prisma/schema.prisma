@@ -69,6 +69,13 @@ model TenantConfig {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  /// Khung Settings (Giai đoạn 4) — Giai đoạn 5 (trọng số thuật toán) và Giai đoạn 7 (nội dung
+  /// trang giới thiệu doanh nghiệp) sẽ thêm cột vào chung bảng này, không tạo bảng riêng.
+  systemName      String? @map("system_name")
+  primaryColor    String? @map("primary_color")
+  logoUrl         String? @map("logo_url")
+  enabledModules  Json    @default("[]") @map("enabled_modules")
+
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@map("tenant_config")
@@ -146,6 +153,10 @@ model WorkflowState {
   isEnd      Boolean  @default(false) @map("is_end")
   isActive   Boolean  @default(true) @map("is_active")
   orderIndex Int      @default(0) @map("order_index")
+  /// Toạ độ hiển thị trên canvas Workflow Builder — null nghĩa là chưa từng được kéo-thả, FE tự
+  /// tính vị trí bằng auto-layout (xem computeInitialLayout ở frontend).
+  positionX  Float?   @map("position_x")
+  positionY  Float?   @map("position_y")
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 

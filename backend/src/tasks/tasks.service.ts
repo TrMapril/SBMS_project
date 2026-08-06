@@ -4,12 +4,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
-import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { WorkflowEngineService } from '../workflow/workflow-engine.service';
 import { CustomFieldsService } from '../custom-fields/custom-fields.service';
+import { ProjectsService } from '../projects/projects.service';
 import { TransitionTaskDto } from './dto/transition-task.dto';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { AssignCustomFieldValuesDto } from './dto/assign-custom-field-values.dto';
+import { ListTasksQueryDto } from './dto/list-tasks-query.dto';
+import type { JwtPayload } from '../common/types/jwt-payload.type';
 
 @Injectable()
 export class TasksService {
@@ -17,6 +19,7 @@ export class TasksService {
     private readonly prisma: PrismaService,
     private readonly workflowEngine: WorkflowEngineService,
     private readonly customFieldsService: CustomFieldsService,
+    private readonly projectsService: ProjectsService,
   ) {}
 
   async create(tenantId: string, dto: CreateTaskDto) {
@@ -82,16 +85,23 @@ export class TasksService {
     });
   }
 
-  async findAll(tenantId: string, pagination: PaginationQueryDto) {
-    const { page, limit } = pagination;
+  async findAll(tenantId: string, query: ListTasksQueryDto, requester: JwtPayload) {
+    const { page, limit, projectId } = query;
+    // Employee chỉ được xem Task của Project mình là thành viên/có Task được giao — không giới
+    // hạn khi liệt kê KHÔNG kèm projectId vì trường hợp đó chưa xảy ra ở Task Board (luôn lọc
+    // theo 1 project cụ thể), giữ đúng phạm vi lỗ hổng đã phát hiện.
+    if (projectId) {
+      await this.projectsService.assertEmployeeCanAccessProject(projectId, requester);
+    }
+    const where = { tenantId, ...(projectId ? { projectId } : {}) };
     const [data, total] = await this.prisma.$transaction([
       this.prisma.task.findMany({
-        where: { tenantId },
+        where,
         skip: (page - 1) * limit,
         take: limit,
         orderBy: { createdAt: 'desc' },
       }),
-      this.prisma.task.count({ where: { tenantId } }),
+      this.prisma.task.count({ where }),
     ]);
     return { data, total, page, limit };
   }
