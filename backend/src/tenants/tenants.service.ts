@@ -31,7 +31,12 @@ export class TenantsService {
     await this.getMyConfig(tenantId);
     return this.prisma.tenantConfig.update({
       where: { tenantId },
-      data: dto,
+      data: {
+        ...dto,
+        assignmentWeights: dto.assignmentWeights
+          ? { ...dto.assignmentWeights }
+          : undefined,
+      },
     });
   }
 

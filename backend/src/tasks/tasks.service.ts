@@ -65,6 +65,7 @@ export class TasksService {
           currentStateId: startState.id,
           assigneeId: dto.assigneeId,
           priority: dto.priority,
+          deadline: dto.deadline ? new Date(dto.deadline) : undefined,
         },
       });
 

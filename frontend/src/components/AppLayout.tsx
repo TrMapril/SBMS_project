@@ -10,6 +10,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { to: '/', label: 'Trang chủ', roles: ['ADMIN', 'MANAGER', 'EMPLOYEE'] },
+  { to: '/dashboard', label: 'Dashboard', roles: ['ADMIN', 'MANAGER'] },
   { to: '/workflows', label: 'Workflow', roles: ['ADMIN'] },
   { to: '/users', label: 'Người dùng', roles: ['ADMIN'] },
   { to: '/roles', label: 'Custom Role', roles: ['ADMIN'] },

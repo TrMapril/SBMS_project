@@ -1,10 +1,17 @@
 import { useState, type FormEvent } from 'react'
 import { useTenantConfig, useUpdateTenantConfig } from '../features/tenants/useTenantConfig'
-import type { TenantConfig } from '../lib/types'
+import type { AssignmentWeights, TenantConfig } from '../lib/types'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
 import { ErrorBanner } from '../components/ui/ErrorBanner'
 import { Spinner } from '../components/ui/Spinner'
+
+const WEIGHT_FIELDS: { key: keyof AssignmentWeights; label: string; hint: string }[] = [
+  { key: 'workload', label: 'W1 — Tải công việc hiện tại', hint: 'Ít Task đang chạy hơn → điểm cao hơn' },
+  { key: 'onTimeRate', label: 'W2 — Tỷ lệ hoàn thành đúng hạn', hint: 'Dựa trên lịch sử các Task có deadline' },
+  { key: 'stepSpeed', label: 'W3 — Tốc độ xử lý bước tương tự', hint: 'So sánh thời gian xử lý cùng 1 State giữa các ứng viên' },
+  { key: 'returnRate', label: 'W4 — Tỷ lệ Task bị trả về', hint: 'Ít bị trả về (transition đi ngược) hơn → điểm cao hơn' },
+]
 
 /** Danh sách module khả dụng — Giai đoạn 5 (thuật toán) và Giai đoạn 7 (trang giới thiệu doanh
  * nghiệp) sẽ đọc enabledModules này để bật/tắt tính năng tương ứng; Giai đoạn 4 chỉ dựng khung
@@ -35,12 +42,19 @@ function SettingsForm({ config }: { config: TenantConfig }) {
   const [primaryColor, setPrimaryColor] = useState(config.primaryColor ?? '')
   const [logoUrl, setLogoUrl] = useState(config.logoUrl ?? '')
   const [enabledModules, setEnabledModules] = useState<string[]>(config.enabledModules)
+  const [weights, setWeights] = useState<AssignmentWeights>(config.assignmentWeights)
 
   function toggleModule(key: string) {
     setEnabledModules((prev) =>
       prev.includes(key) ? prev.filter((m) => m !== key) : [...prev, key],
     )
   }
+
+  function setWeight(key: keyof AssignmentWeights, value: number) {
+    setWeights((prev) => ({ ...prev, [key]: Number.isNaN(value) ? 0 : value }))
+  }
+
+  const weightSum = weights.workload + weights.onTimeRate + weights.stepSpeed + weights.returnRate
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -49,6 +63,7 @@ function SettingsForm({ config }: { config: TenantConfig }) {
       primaryColor: primaryColor || undefined,
       logoUrl: logoUrl || undefined,
       enabledModules,
+      assignmentWeights: weights,
     })
   }
 
@@ -116,6 +131,41 @@ function SettingsForm({ config }: { config: TenantConfig }) {
                 {m.label}
               </label>
             ))}
+          </div>
+        </div>
+
+        <div className="border-t border-gray-100 pt-4">
+          <h2 className="mb-2 text-sm font-semibold text-gray-700">
+            Trọng số Thuật toán 1 — Gợi ý phân công
+          </h2>
+          <p className="mb-3 text-xs text-gray-400">
+            Mặc định W1=0.30 / W2=0.30 / W3=0.25 / W4=0.15. Không bắt buộc tổng = 1, nhưng nên giữ
+            gần 1 để điểm gợi ý dễ so sánh.
+          </p>
+          <div className="space-y-3">
+            {WEIGHT_FIELDS.map((f) => (
+              <div key={f.key}>
+                <label className="mb-1 flex items-center justify-between text-sm font-medium text-gray-700">
+                  <span>{f.label}</span>
+                  <span className="text-xs font-normal text-gray-400">{f.hint}</span>
+                </label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={weights[f.key]}
+                  onChange={(e) => setWeight(f.key, e.target.valueAsNumber)}
+                  className="max-w-[120px]"
+                />
+              </div>
+            ))}
+            <p
+              className={`text-xs ${Math.abs(weightSum - 1) > 0.01 ? 'text-orange-600' : 'text-gray-400'}`}
+            >
+              Tổng hiện tại: {weightSum.toFixed(2)}
+              {Math.abs(weightSum - 1) > 0.01 && ' (khác 1, vẫn lưu được bình thường)'}
+            </p>
           </div>
         </div>
 

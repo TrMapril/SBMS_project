@@ -1,4 +1,5 @@
 import {
+  IsDateString,
   IsEnum,
   IsObject,
   IsOptional,
@@ -27,6 +28,11 @@ export class CreateTaskDto {
   @IsOptional()
   @IsUUID()
   assigneeId?: string;
+
+  /** Dùng bởi Thuật toán 1 (tỷ lệ hoàn thành đúng hạn) và Thuật toán 2 (risk score) — Giai đoạn 5. */
+  @IsOptional()
+  @IsDateString()
+  deadline?: string;
 
   @IsOptional()
   @IsObject()

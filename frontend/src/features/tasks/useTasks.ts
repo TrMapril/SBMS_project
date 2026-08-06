@@ -28,6 +28,7 @@ export interface CreateTaskInput {
   description?: string
   priority?: TaskPriority
   assigneeId?: string
+  deadline?: string
   customFieldValues?: Record<string, unknown>
 }
 

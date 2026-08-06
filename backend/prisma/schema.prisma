@@ -52,13 +52,14 @@ model Tenant {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  config       TenantConfig?
-  users        User[]
-  roles        Role[]
-  workflows    Workflow[]
-  tasks        Task[]
-  projects     Project[]
-  customFields CustomField[]
+  config              TenantConfig?
+  users               User[]
+  roles               Role[]
+  workflows           Workflow[]
+  tasks               Task[]
+  projects            Project[]
+  customFields        CustomField[]
+  bottleneckSnapshots BottleneckSnapshot[]
 
   @@map("tenants")
 }
@@ -71,10 +72,13 @@ model TenantConfig {
 
   /// Khung Settings (Giai đoạn 4) — Giai đoạn 5 (trọng số thuật toán) và Giai đoạn 7 (nội dung
   /// trang giới thiệu doanh nghiệp) sẽ thêm cột vào chung bảng này, không tạo bảng riêng.
-  systemName      String? @map("system_name")
-  primaryColor    String? @map("primary_color")
-  logoUrl         String? @map("logo_url")
-  enabledModules  Json    @default("[]") @map("enabled_modules")
+  systemName        String? @map("system_name")
+  primaryColor      String? @map("primary_color")
+  logoUrl           String? @map("logo_url")
+  enabledModules    Json    @default("[]") @map("enabled_modules")
+  /// Trọng số Thuật toán 1 (gợi ý phân công) — 4 khoá cố định workload/onTimeRate/stepSpeed/
+  /// returnRate, mặc định W1=0.30/W2=0.30/W3=0.25/W4=0.15 đúng tài liệu phân tích thiết kế Mục 4.4.
+  assignmentWeights Json    @default("{\"workload\":0.3,\"onTimeRate\":0.3,\"stepSpeed\":0.25,\"returnRate\":0.15}") @map("assignment_weights")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -137,10 +141,11 @@ model Workflow {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  tenant      Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  states      WorkflowState[]
-  transitions WorkflowTransition[]
-  projects    Project[]
+  tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  states              WorkflowState[]
+  transitions         WorkflowTransition[]
+  projects            Project[]
+  bottleneckSnapshots BottleneckSnapshot[]
 
   @@map("workflows")
 }
@@ -203,17 +208,24 @@ model WorkflowTemplate {
 }
 
 model Task {
-  id             String       @id @default(uuid())
-  tenantId       String       @map("tenant_id")
-  projectId      String       @map("project_id")
-  title          String
-  description    String?
-  currentStateId String       @map("current_state_id")
-  assigneeId     String?      @map("assignee_id")
-  priority       TaskPriority @default(MEDIUM)
-  version        Int          @default(1)
-  createdAt      DateTime     @default(now()) @map("created_at")
-  updatedAt      DateTime     @updatedAt @map("updated_at")
+  id                 String       @id @default(uuid())
+  tenantId           String       @map("tenant_id")
+  projectId          String       @map("project_id")
+  title              String
+  description        String?
+  currentStateId     String       @map("current_state_id")
+  assigneeId         String?      @map("assignee_id")
+  priority           TaskPriority @default(MEDIUM)
+  version            Int          @default(1)
+  /// Hạn hoàn thành — dùng bởi Thuật toán 1 (tỷ lệ hoàn thành đúng hạn) và Thuật toán 2 (risk
+  /// score). Task không có deadline không được tính risk_score (Giai đoạn 5, xem DECISIONS.md).
+  deadline           DateTime?    @map("deadline")
+  /// % nguy cơ trễ deadline (0-100), Thuật toán 2 cập nhật định kỳ — null nghĩa là chưa từng
+  /// tính (task không có deadline, hoặc đã ở trạng thái is_end).
+  riskScore          Float?       @map("risk_score")
+  riskScoreUpdatedAt DateTime?    @map("risk_score_updated_at")
+  createdAt          DateTime     @default(now()) @map("created_at")
+  updatedAt          DateTime     @updatedAt @map("updated_at")
 
   tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   project           Project            @relation(fields: [projectId], references: [id])
@@ -307,4 +319,27 @@ model TaskHistory {
   actionByUser User                @relation("TaskHistoryActionBy", fields: [actionBy], references: [id])
 
   @@map("task_history")
+}
+
+/// Thuật toán 3 (bottleneck) — kết quả phân tích task_history định kỳ, lưu lại để Dashboard đọc
+/// (Mục "Phạm vi" Giai đoạn 5 plan.md: "không cần tính realtime mỗi lần load trang"). Mỗi hàng là
+/// 1 lần chạy job cho 1 Workflow; stateStats/transitionStats là mảng JSON (xem DECISIONS.md cho
+/// cấu trúc phần tử) — không tách bảng con vì đây là dữ liệu chỉ-đọc cho Dashboard, không cần
+/// query/join theo từng phần tử.
+model BottleneckSnapshot {
+  id         String   @id @default(uuid())
+  tenantId   String   @map("tenant_id")
+  workflowId String   @map("workflow_id")
+  computedAt DateTime @default(now()) @map("computed_at")
+  windowDays Int      @default(30) @map("window_days")
+
+  stateStats                  Json   @map("state_stats")
+  transitionStats             Json   @map("transition_stats")
+  overallBackwardRate         Float  @map("overall_backward_rate")
+  deltaBackwardRateVsPrevious Float? @map("delta_backward_rate_vs_previous")
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workflow Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@map("bottleneck_snapshots")
 }

@@ -1,12 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../../lib/api-client'
-import type { TenantConfig } from '../../lib/types'
+import type { AssignmentWeights, TenantConfig } from '../../lib/types'
 
 export interface UpdateTenantConfigInput {
   systemName?: string
   primaryColor?: string
   logoUrl?: string
   enabledModules?: string[]
+  assignmentWeights?: AssignmentWeights
 }
 
 export function useTenantConfig() {

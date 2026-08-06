@@ -13,6 +13,7 @@ import { ProjectDetailPage } from './pages/ProjectDetailPage'
 import { WorkflowsPage } from './pages/WorkflowsPage'
 import { WorkflowBuilderPage } from './pages/WorkflowBuilderPage'
 import { TaskBoardPage } from './pages/TaskBoardPage'
+import { DashboardPage } from './pages/DashboardPage'
 
 function App() {
   return (
@@ -35,6 +36,15 @@ function App() {
         }
       >
         <Route path="/" element={<HomePage />} />
+
+        <Route
+          path="/dashboard"
+          element={
+            <ProtectedRoute roles={['ADMIN', 'MANAGER']}>
+              <DashboardPage />
+            </ProtectedRoute>
+          }
+        />
 
         <Route
           path="/users"

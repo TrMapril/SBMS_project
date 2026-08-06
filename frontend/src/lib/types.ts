@@ -136,6 +136,13 @@ export interface ProjectDetail extends Project {
   members: ProjectMember[]
 }
 
+export interface AssignmentWeights {
+  workload: number
+  onTimeRate: number
+  stepSpeed: number
+  returnRate: number
+}
+
 export interface TenantConfig {
   id: string
   tenantId: string
@@ -143,6 +150,7 @@ export interface TenantConfig {
   primaryColor: string | null
   logoUrl: string | null
   enabledModules: string[]
+  assignmentWeights: AssignmentWeights
   createdAt: string
   updatedAt: string
 }
@@ -177,6 +185,9 @@ export interface Task {
   assigneeId: string | null
   priority: TaskPriority
   version: number
+  deadline: string | null
+  riskScore: number | null
+  riskScoreUpdatedAt: string | null
   createdAt: string
   updatedAt: string
   customFieldValues?: CustomFieldValue[]
@@ -196,4 +207,49 @@ export interface TaskHistoryEntry {
 export interface TaskDetail extends Task {
   currentState: WorkflowState
   history: TaskHistoryEntry[]
+}
+
+export interface AssignmentSuggestion {
+  userId: string
+  fullName: string
+  email: string
+  score: number
+  breakdown: AssignmentWeights
+}
+
+export interface RiskAlertTask extends Task {
+  assignee: Pick<User, 'id' | 'fullName'> | null
+  project: Pick<Project, 'id' | 'name'>
+  currentState: Pick<WorkflowState, 'id' | 'name'>
+}
+
+export interface BottleneckStateStat {
+  stateId: string
+  stateName: string
+  avgDwellHours: number | null
+  taskCount: number
+  deltaHoursVsPrevious: number | null
+}
+
+export interface BottleneckTransitionStat {
+  transitionId: string
+  name: string
+  fromStateId: string
+  fromStateName: string
+  toStateId: string
+  toStateName: string
+  isBackward: boolean
+  count: number
+}
+
+export interface BottleneckSnapshot {
+  id: string
+  tenantId: string
+  workflowId: string
+  computedAt: string
+  windowDays: number
+  stateStats: BottleneckStateStat[]
+  transitionStats: BottleneckTransitionStat[]
+  overallBackwardRate: number
+  deltaBackwardRateVsPrevious: number | null
 }

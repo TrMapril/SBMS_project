@@ -6,6 +6,7 @@ import { useCreateTask, useTasks, useTransitionTask } from '../features/tasks/us
 import { useMyRoles } from '../features/roles/useRoles'
 import { useUsers } from '../features/users/useUsers'
 import { useCustomFields } from '../features/custom-fields/useCustomFields'
+import { useAssignmentSuggestions } from '../features/algorithms/useAlgorithms'
 import { useAuthStore } from '../store/auth.store'
 import type { Task, TaskPriority, WorkflowState, WorkflowTransition } from '../lib/types'
 import { Button } from '../components/ui/Button'
@@ -172,6 +173,25 @@ function TaskCard({
       <p className="text-xs text-gray-400">
         {assigneeName ? `Giao cho: ${assigneeName}` : 'Chưa có assignee'}
       </p>
+      {task.deadline && (
+        <p className="text-xs text-gray-400">
+          Hạn: {new Date(task.deadline).toLocaleDateString('vi-VN')}
+        </p>
+      )}
+      {task.riskScore != null && (
+        <span
+          className={`mt-1 inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${
+            task.riskScore > 70
+              ? 'bg-red-100 text-red-700'
+              : task.riskScore > 40
+                ? 'bg-yellow-100 text-yellow-700'
+                : 'bg-green-100 text-green-700'
+          }`}
+          title="Thuật toán 2 — % nguy cơ trễ deadline, cập nhật mỗi giờ"
+        >
+          Rủi ro trễ: {task.riskScore.toFixed(0)}%
+        </span>
+      )}
 
       {transitions.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1">
@@ -209,10 +229,16 @@ function CreateTaskModal({
   const [title, setTitle] = useState('')
   const [priority, setPriority] = useState<TaskPriority>('MEDIUM')
   const [assigneeId, setAssigneeId] = useState('')
+  const [deadline, setDeadline] = useState('')
   const { data: users } = useUsers()
   const { data: customFields } = useCustomFields()
   const [customValues, setCustomValues] = useState<Record<string, string>>({})
   const createTask = useCreateTask(projectId)
+  const {
+    data: suggestions,
+    isLoading: loadingSuggestions,
+    error: suggestionsError,
+  } = useAssignmentSuggestions(projectId)
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -225,6 +251,7 @@ function CreateTaskModal({
         title,
         priority,
         assigneeId: assigneeId || undefined,
+        deadline: deadline || undefined,
         customFieldValues: Object.keys(filledValues).length ? filledValues : undefined,
       },
       { onSuccess: onClose },
@@ -248,6 +275,16 @@ function CreateTaskModal({
           </Select>
         </div>
         <div>
+          <label className="mb-1 block text-sm font-medium text-gray-700">
+            Hạn hoàn thành (tuỳ chọn)
+          </label>
+          <Input
+            type="date"
+            value={deadline}
+            onChange={(e) => setDeadline(e.target.value)}
+          />
+        </div>
+        <div>
           <label className="mb-1 block text-sm font-medium text-gray-700">Assignee</label>
           <Select value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)}>
             <option value="">-- Không giao --</option>
@@ -257,6 +294,43 @@ function CreateTaskModal({
               </option>
             ))}
           </Select>
+        </div>
+
+        <div>
+          <label className="mb-1 block text-sm font-medium text-gray-700">
+            Gợi ý phân công (Thuật toán 1)
+          </label>
+          {loadingSuggestions && <p className="text-xs text-gray-400">Đang tính điểm...</p>}
+          {suggestionsError && <ErrorBanner error={suggestionsError} />}
+          {suggestions && suggestions.length === 0 && (
+            <p className="text-xs text-gray-400">
+              Project chưa có Employee nào là thành viên để gợi ý.
+            </p>
+          )}
+          {suggestions && suggestions.length > 0 && (
+            <ul className="space-y-1 rounded-md border border-gray-100">
+              {suggestions.map((s, index) => (
+                <li key={s.userId}>
+                  <button
+                    type="button"
+                    onClick={() => setAssigneeId(s.userId)}
+                    title={`Tải công việc: ${(s.breakdown.workload * 100).toFixed(0)} · Đúng hạn: ${(s.breakdown.onTimeRate * 100).toFixed(0)} · Tốc độ: ${(s.breakdown.stepSpeed * 100).toFixed(0)} · Ít trả về: ${(s.breakdown.returnRate * 100).toFixed(0)}`}
+                    className={`flex w-full items-center justify-between px-3 py-1.5 text-left text-sm hover:bg-gray-50 ${
+                      assigneeId === s.userId ? 'bg-indigo-50' : ''
+                    }`}
+                  >
+                    <span className="text-gray-800">
+                      {index === 0 && '🏆 '}
+                      {s.fullName}
+                    </span>
+                    <span className="text-xs font-medium text-indigo-600">
+                      {(s.score * 100).toFixed(0)} điểm
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
         {customFields && customFields.data.length > 0 && (

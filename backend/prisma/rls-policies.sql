@@ -339,3 +339,25 @@ CREATE POLICY custom_field_values_tenant_isolation ON custom_field_values
         AND tasks.tenant_id = current_setting('app.current_tenant_id', true)
     )
   );
+
+-- ============================================================================
+-- Giai đoạn 5: bottleneck_snapshots
+-- (tasks.deadline/risk_score/risk_score_updated_at và tenant_config.assignment_weights chỉ là
+-- CỘT MỚI trên bảng đã có policy ở trên — RLS áp dụng theo hàng, không theo cột, nên không cần
+-- policy riêng cho 2 bảng này.)
+-- ============================================================================
+
+ALTER TABLE bottleneck_snapshots ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bottleneck_snapshots FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS bottleneck_snapshots_tenant_isolation ON bottleneck_snapshots;
+CREATE POLICY bottleneck_snapshots_tenant_isolation ON bottleneck_snapshots
+  FOR ALL
+  USING (
+    current_setting('app.is_super_admin', true) = 'true'
+    OR tenant_id = current_setting('app.current_tenant_id', true)
+  )
+  WITH CHECK (
+    current_setting('app.is_super_admin', true) = 'true'
+    OR tenant_id = current_setting('app.current_tenant_id', true)
+  );
