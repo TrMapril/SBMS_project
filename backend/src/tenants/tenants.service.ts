@@ -10,15 +10,21 @@ import type { Cache } from 'cache-manager';
 import { Prisma, TenantConfig } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { SupabaseStorageService } from '../common/storage/supabase-storage.service';
+import { assertValidUpload, UploadedFileLike } from '../common/utils/file-validation.util';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
 import { UpdateTenantConfigDto } from './dto/update-tenant-config.dto';
+
+const BANNER_IMAGE_MAX_COUNT = 5;
+const BANNER_IMAGE_MIME_TYPES = ['image/jpeg', 'image/png'];
 
 @Injectable()
 export class TenantsService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(CACHE_MANAGER) private readonly cache: Cache,
+    private readonly storage: SupabaseStorageService,
   ) {}
 
   private configCacheKey(tenantId: string): string {
@@ -52,7 +58,47 @@ export class TenantsService {
         assignmentWeights: dto.assignmentWeights
           ? { ...dto.assignmentWeights }
           : undefined,
+        socialLinks: dto.socialLinks ? { ...dto.socialLinks } : undefined,
       },
+    });
+    await this.cache.del(this.configCacheKey(tenantId));
+    return updated;
+  }
+
+  /** Thêm 1 ảnh vào bannerImages — giới hạn tối đa 5 ảnh (Mục "Definition of Done" Giai đoạn 7
+   * plan.md: "upload ảnh thứ 6 bị từ chối với thông báo rõ ràng"), kiểm tra ngay tại thời điểm
+   * upload (không phải ràng buộc DB) vì mảng lưu dạng Json, không có CHECK constraint được. */
+  async addBannerImage(tenantId: string, file: UploadedFileLike & { originalname: string }) {
+    assertValidUpload(file, BANNER_IMAGE_MIME_TYPES);
+    const config = await this.getMyConfig(tenantId);
+    const images = (config.bannerImages as string[]) ?? [];
+    if (images.length >= BANNER_IMAGE_MAX_COUNT) {
+      throw new BadRequestException(
+        `Đã đạt giới hạn tối đa ${BANNER_IMAGE_MAX_COUNT} ảnh giới thiệu`,
+      );
+    }
+
+    const url = await this.storage.upload(`tenant-banners/${tenantId}`, file);
+    const updated = await this.prisma.tenantConfig.update({
+      where: { tenantId },
+      data: { bannerImages: [...images, url] },
+    });
+    await this.cache.del(this.configCacheKey(tenantId));
+    return updated;
+  }
+
+  async removeBannerImage(tenantId: string, index: number) {
+    const config = await this.getMyConfig(tenantId);
+    const images = [...((config.bannerImages as string[]) ?? [])];
+    if (index < 0 || index >= images.length) {
+      throw new NotFoundException('Không tìm thấy ảnh ở vị trí này');
+    }
+
+    const [removedUrl] = images.splice(index, 1);
+    await this.storage.remove(removedUrl);
+    const updated = await this.prisma.tenantConfig.update({
+      where: { tenantId },
+      data: { bannerImages: images },
     });
     await this.cache.del(this.configCacheKey(tenantId));
     return updated;

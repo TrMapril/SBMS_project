@@ -14,6 +14,10 @@ import { ProjectsModule } from './projects/projects.module';
 import { CustomFieldsModule } from './custom-fields/custom-fields.module';
 import { AlgorithmsModule } from './algorithms/algorithms.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { PublicModule } from './public/public.module';
+import { LeaveRequestsModule } from './leave-requests/leave-requests.module';
+import { PersonnelModule } from './personnel/personnel.module';
+import { EmployeeProfilesModule } from './employee-profiles/employee-profiles.module';
 
 @Module({
   imports: [
@@ -33,6 +37,10 @@ import { NotificationsModule } from './notifications/notifications.module';
     TasksModule,
     AlgorithmsModule,
     NotificationsModule,
+    PublicModule,
+    LeaveRequestsModule,
+    PersonnelModule,
+    EmployeeProfilesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

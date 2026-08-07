@@ -100,4 +100,48 @@ export class TaskHistoryAnalyticsService {
     const sum = durations.reduce((acc, d) => acc + d.hours, 0);
     return sum / durations.length;
   }
+
+  /**
+   * Chỉ số định lượng tự động cho Hồ sơ Năng lực (Giai đoạn 7, Mục 4.3 tài liệu phân tích thiết
+   * kế: "tổng số task/bước xử lý, tỷ lệ hoàn thành đúng hạn, thời gian xử lý trung bình, số lần
+   * bị trả về"). Đơn giản hoá "thời gian xử lý trung bình THEO LOẠI BƯỚC" thành 1 số trung bình
+   * chung toàn bộ bước của nhân viên — đúng mức tối giản plan.md cho phép ở Giai đoạn 7, ghi rõ
+   * giả định này trong DECISIONS.md thay vì làm bảng phân loại theo từng State.
+   */
+  async getEmployeeMetrics(tenantId: string, userId: string) {
+    const [totalCompletedTasks, onTimeRows, returnRows, durations] = await Promise.all([
+      this.prisma.taskHistory.count({
+        where: { task: { tenantId, assigneeId: userId }, toState: { isEnd: true } },
+      }),
+      this.prisma.taskHistory.findMany({
+        where: {
+          task: { tenantId, assigneeId: userId, deadline: { not: null } },
+          toState: { isEnd: true },
+        },
+        select: { actionAt: true, task: { select: { deadline: true } } },
+      }),
+      this.prisma.taskHistory.findMany({
+        where: { task: { tenantId, assigneeId: userId } },
+        select: {
+          fromState: { select: { orderIndex: true } },
+          toState: { select: { orderIndex: true } },
+        },
+      }),
+      this.computeDwellDurations({ tenantId, assigneeId: userId }),
+    ]);
+
+    const onTimeCount = onTimeRows.filter(
+      (r) => r.task.deadline && r.actionAt <= r.task.deadline,
+    ).length;
+    const returnCount = returnRows.filter(
+      (r) => r.fromState && r.toState.orderIndex < r.fromState.orderIndex,
+    ).length;
+
+    return {
+      totalCompletedTasks,
+      onTimeRate: onTimeRows.length > 0 ? onTimeCount / onTimeRows.length : null,
+      returnCount,
+      avgProcessingHours: this.average(durations),
+    };
+  }
 }

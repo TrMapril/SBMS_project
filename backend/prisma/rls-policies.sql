@@ -380,3 +380,72 @@ CREATE POLICY notifications_tenant_isolation ON notifications
     current_setting('app.is_super_admin', true) = 'true'
     OR tenant_id = current_setting('app.current_tenant_id', true)
   );
+
+-- ============================================================================
+-- Giai đoạn 7: leave_requests, competency_profiles, personnel_proposals,
+-- employee_profiles
+-- (tenant_config.intro_text/banner_images/address/contact_phone/contact_email/social_links chỉ
+-- là CỘT MỚI trên bảng đã có policy — không cần policy riêng. GET /api/public/tenant/:slug đọc
+-- qua PrismaService KHÔNG đi qua JWT/RLS session context — do đó chỉ trả đúng field công khai ở
+-- tầng Service (PublicService), không dựa vào RLS để giới hạn dữ liệu trả về cho route này.)
+-- ============================================================================
+
+ALTER TABLE leave_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE leave_requests FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS leave_requests_tenant_isolation ON leave_requests;
+CREATE POLICY leave_requests_tenant_isolation ON leave_requests
+  FOR ALL
+  USING (
+    current_setting('app.is_super_admin', true) = 'true'
+    OR tenant_id = current_setting('app.current_tenant_id', true)
+  )
+  WITH CHECK (
+    current_setting('app.is_super_admin', true) = 'true'
+    OR tenant_id = current_setting('app.current_tenant_id', true)
+  );
+
+ALTER TABLE competency_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE competency_profiles FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS competency_profiles_tenant_isolation ON competency_profiles;
+CREATE POLICY competency_profiles_tenant_isolation ON competency_profiles
+  FOR ALL
+  USING (
+    current_setting('app.is_super_admin', true) = 'true'
+    OR tenant_id = current_setting('app.current_tenant_id', true)
+  )
+  WITH CHECK (
+    current_setting('app.is_super_admin', true) = 'true'
+    OR tenant_id = current_setting('app.current_tenant_id', true)
+  );
+
+ALTER TABLE personnel_proposals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE personnel_proposals FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS personnel_proposals_tenant_isolation ON personnel_proposals;
+CREATE POLICY personnel_proposals_tenant_isolation ON personnel_proposals
+  FOR ALL
+  USING (
+    current_setting('app.is_super_admin', true) = 'true'
+    OR tenant_id = current_setting('app.current_tenant_id', true)
+  )
+  WITH CHECK (
+    current_setting('app.is_super_admin', true) = 'true'
+    OR tenant_id = current_setting('app.current_tenant_id', true)
+  );
+
+ALTER TABLE employee_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE employee_profiles FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS employee_profiles_tenant_isolation ON employee_profiles;
+CREATE POLICY employee_profiles_tenant_isolation ON employee_profiles
+  FOR ALL
+  USING (
+    current_setting('app.is_super_admin', true) = 'true'
+    OR tenant_id = current_setting('app.current_tenant_id', true)
+  )
+  WITH CHECK (
+    current_setting('app.is_super_admin', true) = 'true'
+    OR tenant_id = current_setting('app.current_tenant_id', true)
+  );

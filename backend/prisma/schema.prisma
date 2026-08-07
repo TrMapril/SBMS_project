@@ -45,6 +45,31 @@ enum CustomFieldType {
   @@map("custom_field_type")
 }
 
+enum LeaveRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+
+  @@map("leave_request_status")
+}
+
+enum PersonnelProposalType {
+  PROMOTION
+  RAISE
+  WARNING
+  AWARD
+
+  @@map("personnel_proposal_type")
+}
+
+enum PersonnelProposalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+
+  @@map("personnel_proposal_status")
+}
+
 model Tenant {
   id        String   @id @default(uuid())
   name      String
@@ -61,6 +86,10 @@ model Tenant {
   customFields        CustomField[]
   bottleneckSnapshots BottleneckSnapshot[]
   notifications       Notification[]
+  leaveRequests       LeaveRequest[]
+  competencyProfiles  CompetencyProfile[]
+  personnelProposals  PersonnelProposal[]
+  employeeProfiles    EmployeeProfile[]
 
   @@map("tenants")
 }
@@ -80,6 +109,18 @@ model TenantConfig {
   /// Trọng số Thuật toán 1 (gợi ý phân công) — 4 khoá cố định workload/onTimeRate/stepSpeed/
   /// returnRate, mặc định W1=0.30/W2=0.30/W3=0.25/W4=0.15 đúng tài liệu phân tích thiết kế Mục 4.4.
   assignmentWeights Json    @default("{\"workload\":0.3,\"onTimeRate\":0.3,\"stepSpeed\":0.25,\"returnRate\":0.15}") @map("assignment_weights")
+
+  /// Giai đoạn 7 — nội dung trang giới thiệu doanh nghiệp public (Mục 4.8 tài liệu phân tích
+  /// thiết kế), đọc qua GET /api/public/tenant/:slug (không cần JWT). `slug` dùng cho route này
+  /// đã có sẵn trên `tenants` từ Giai đoạn 1, không thêm cột mới. bannerImages tối đa 5 phần tử —
+  /// kiểm tra ở tầng Service khi upload, không ràng buộc DB. socialLinks dạng { facebook?,
+  /// linkedin?, ... } tự do, không ép cứng danh sách nền tảng.
+  introText    String? @map("intro_text")
+  bannerImages Json    @default("[]") @map("banner_images")
+  address      String?
+  contactPhone String? @map("contact_phone")
+  contactEmail String? @map("contact_email")
+  socialLinks  Json    @default("{}") @map("social_links")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -104,6 +145,18 @@ model User {
   taskHistoryItems   TaskHistory[]   @relation("TaskHistoryActionBy")
   projectMemberships ProjectMember[]
   notifications      Notification[]
+
+  /// Giai đoạn 7 — 1 user có thể xuất hiện ở nhiều vai trò khác nhau trên cùng 1 bảng (người
+  /// gửi/người duyệt đơn, người được đánh giá/người đánh giá, người được đề xuất/người tạo đề
+  /// xuất/người phê duyệt) — mỗi vai trò 1 relation riêng, đặt tên rõ để Prisma không nhầm FK.
+  leaveRequestsSubmitted     LeaveRequest[]      @relation("LeaveRequestUser")
+  leaveRequestsReviewed      LeaveRequest[]      @relation("LeaveRequestReviewer")
+  competencyProfiles         CompetencyProfile[] @relation("CompetencyProfileUser")
+  competencyProfilesAuthored CompetencyProfile[] @relation("CompetencyProfileAuthor")
+  personnelProposalsReceived PersonnelProposal[] @relation("PersonnelProposalUser")
+  personnelProposalsProposed PersonnelProposal[] @relation("PersonnelProposalProposer")
+  personnelProposalsReviewed PersonnelProposal[] @relation("PersonnelProposalReviewer")
+  employeeProfile            EmployeeProfile?
 
   @@map("users")
 }
@@ -365,4 +418,104 @@ model Notification {
 
   @@index([tenantId, userId, isRead])
   @@map("notifications")
+}
+
+/// Giai đoạn 7 — đơn từ nội bộ (nghỉ phép, công tác...). File đính kèm tuỳ chọn, lưu Supabase
+/// Storage (giới hạn 5MB, kiểm tra magic bytes — Mục "Giới hạn file upload" plan.md). Không có
+/// khái niệm "quản lý trực tiếp" trong data model hiện tại (User không có managerId) nên MỌI
+/// Manager/Admin trong tenant đều xem và duyệt được mọi đơn — giả định đơn giản nhất phù hợp
+/// Mục 8 CLAUDE.md, ghi rõ trong DECISIONS.md. Duyệt xong bắn `leave-request:resolved` cho
+/// người gửi, đúng event đã đặt tên sẵn ở Mục "Quy ước Socket.io" plan.md từ Giai đoạn 6.
+model LeaveRequest {
+  id            String             @id @default(uuid())
+  tenantId      String             @map("tenant_id")
+  userId        String             @map("user_id")
+  startDate     DateTime           @map("start_date")
+  endDate       DateTime           @map("end_date")
+  reason        String
+  attachmentUrl String?            @map("attachment_url")
+  status        LeaveRequestStatus @default(PENDING)
+  reviewedBy    String?            @map("reviewed_by")
+  reviewedAt    DateTime?          @map("reviewed_at")
+  reviewComment String?            @map("review_comment")
+  createdAt     DateTime           @default(now()) @map("created_at")
+  updatedAt     DateTime           @updatedAt @map("updated_at")
+
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user     User   @relation("LeaveRequestUser", fields: [userId], references: [id], onDelete: Cascade)
+  reviewer User?  @relation("LeaveRequestReviewer", fields: [reviewedBy], references: [id])
+
+  @@map("leave_requests")
+}
+
+/// Giai đoạn 7 — hồ sơ năng lực NỘI BỘ, chỉ Manager/Admin xem (Mục 4.3 tài liệu phân tích thiết
+/// kế: "chỉ Manager mới thấy phần đánh giá nội bộ") — khác hẳn `employee_profiles` công khai bên
+/// dưới. Mỗi hàng là 1 lượt đánh giá định tính theo kỳ do Manager ghi. Chỉ số định lượng tự động
+/// (tổng task hoàn thành, tỷ lệ đúng hạn, thời gian xử lý trung bình...) KHÔNG lưu trùng ở đây —
+/// tính trực tiếp từ task_history mỗi lần đọc (tái dùng TaskHistoryAnalyticsService của Giai
+/// đoạn 5), tránh 1 dữ liệu có 2 nguồn có thể lệch nhau.
+model CompetencyProfile {
+  id            String   @id @default(uuid())
+  tenantId      String   @map("tenant_id")
+  userId        String   @map("user_id")
+  periodLabel   String   @map("period_label")
+  overallRating Int      @map("overall_rating")
+  managerNotes  String?  @map("manager_notes")
+  createdBy     String   @map("created_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  tenant        Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user          User   @relation("CompetencyProfileUser", fields: [userId], references: [id], onDelete: Cascade)
+  createdByUser User   @relation("CompetencyProfileAuthor", fields: [createdBy], references: [id])
+
+  @@map("competency_profiles")
+}
+
+/// Giai đoạn 7 — đề xuất nhân sự (Manager tạo, Admin phê duyệt/từ chối). Đúng "mức tối giản" mà
+/// plan.md cho phép: quy trình 1 bước duy nhất (propose → resolve) — tài liệu phân tích thiết kế
+/// gốc vốn dĩ chỉ mô tả 1 bước phê duyệt, không phải bị cắt bớt từ quy trình nhiều bước nào.
+model PersonnelProposal {
+  id            String                  @id @default(uuid())
+  tenantId      String                  @map("tenant_id")
+  userId        String                  @map("user_id")
+  type          PersonnelProposalType
+  description   String
+  status        PersonnelProposalStatus @default(PENDING)
+  proposedBy    String                  @map("proposed_by")
+  reviewedBy    String?                 @map("reviewed_by")
+  reviewedAt    DateTime?               @map("reviewed_at")
+  reviewComment String?                 @map("review_comment")
+  createdAt     DateTime                @default(now()) @map("created_at")
+  updatedAt     DateTime                @updatedAt @map("updated_at")
+
+  tenant         Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user           User   @relation("PersonnelProposalUser", fields: [userId], references: [id], onDelete: Cascade)
+  proposedByUser User   @relation("PersonnelProposalProposer", fields: [proposedBy], references: [id])
+  reviewer       User?  @relation("PersonnelProposalReviewer", fields: [reviewedBy], references: [id])
+
+  @@map("personnel_proposals")
+}
+
+/// Giai đoạn 7 — hồ sơ CÔNG KHAI nhân viên (khác `competency_profiles` nội bộ ở trên). Employee
+/// tự sửa qua PATCH /api/employee-profiles/me, mọi người trong tenant xem được qua GET
+/// /api/employee-profiles/:userId. `completedTaskCount` không lưu ở đây — tính trực tiếp từ
+/// task_history mỗi lần đọc, luôn khớp dữ liệu thật.
+model EmployeeProfile {
+  id             String   @id @default(uuid())
+  userId         String   @unique @map("user_id")
+  tenantId       String   @map("tenant_id")
+  phone          String?
+  address        String?
+  bio            String?
+  /// Mảng JSON { name, issuer, year } — Mục 3.5/3.6 CLAUDE.md: không xây bảng con cho dữ liệu
+  /// chỉ đọc/ghi nguyên khối, không cần query riêng từng phần tử.
+  certifications Json     @default("[]")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("employee_profiles")
 }

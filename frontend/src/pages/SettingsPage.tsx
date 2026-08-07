@@ -1,10 +1,22 @@
 import { useState, type FormEvent } from 'react'
-import { useTenantConfig, useUpdateTenantConfig } from '../features/tenants/useTenantConfig'
+import {
+  useAddBannerImage,
+  useRemoveBannerImage,
+  useTenantConfig,
+  useUpdateTenantConfig,
+} from '../features/tenants/useTenantConfig'
 import type { AssignmentWeights, TenantConfig } from '../lib/types'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
+import { Textarea } from '../components/ui/Textarea'
 import { ErrorBanner } from '../components/ui/ErrorBanner'
 import { Spinner } from '../components/ui/Spinner'
+
+const SOCIAL_PLATFORMS: { key: string; label: string }[] = [
+  { key: 'facebook', label: 'Facebook' },
+  { key: 'linkedin', label: 'LinkedIn' },
+  { key: 'twitter', label: 'Twitter/X' },
+]
 
 const WEIGHT_FIELDS: { key: keyof AssignmentWeights; label: string; hint: string }[] = [
   { key: 'workload', label: 'W1 — Tải công việc hiện tại', hint: 'Ít Task đang chạy hơn → điểm cao hơn' },
@@ -43,6 +55,11 @@ function SettingsForm({ config }: { config: TenantConfig }) {
   const [logoUrl, setLogoUrl] = useState(config.logoUrl ?? '')
   const [enabledModules, setEnabledModules] = useState<string[]>(config.enabledModules)
   const [weights, setWeights] = useState<AssignmentWeights>(config.assignmentWeights)
+  const [introText, setIntroText] = useState(config.introText ?? '')
+  const [address, setAddress] = useState(config.address ?? '')
+  const [contactPhone, setContactPhone] = useState(config.contactPhone ?? '')
+  const [contactEmail, setContactEmail] = useState(config.contactEmail ?? '')
+  const [socialLinks, setSocialLinks] = useState<Record<string, string>>(config.socialLinks)
 
   function toggleModule(key: string) {
     setEnabledModules((prev) =>
@@ -64,6 +81,11 @@ function SettingsForm({ config }: { config: TenantConfig }) {
       logoUrl: logoUrl || undefined,
       enabledModules,
       assignmentWeights: weights,
+      introText: introText || undefined,
+      address: address || undefined,
+      contactPhone: contactPhone || undefined,
+      contactEmail: contactEmail || undefined,
+      socialLinks,
     })
   }
 
@@ -169,6 +191,54 @@ function SettingsForm({ config }: { config: TenantConfig }) {
           </div>
         </div>
 
+        <div className="border-t border-gray-100 pt-4">
+          <h2 className="mb-2 text-sm font-semibold text-gray-700">
+            Trang giới thiệu doanh nghiệp (/t/{'{slug}'})
+          </h2>
+          <div className="space-y-3">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Giới thiệu</label>
+              <Textarea
+                value={introText}
+                onChange={(e) => setIntroText(e.target.value)}
+                rows={3}
+                placeholder="Vài dòng giới thiệu về doanh nghiệp..."
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Địa chỉ</label>
+              <Input value={address} onChange={(e) => setAddress(e.target.value)} />
+            </div>
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="mb-1 block text-sm font-medium text-gray-700">Điện thoại</label>
+                <Input value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} />
+              </div>
+              <div className="flex-1">
+                <label className="mb-1 block text-sm font-medium text-gray-700">Email</label>
+                <Input value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} />
+              </div>
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Mạng xã hội</label>
+              <div className="space-y-2">
+                {SOCIAL_PLATFORMS.map((p) => (
+                  <div key={p.key} className="flex items-center gap-2">
+                    <span className="w-20 shrink-0 text-xs text-gray-500">{p.label}</span>
+                    <Input
+                      value={socialLinks[p.key] ?? ''}
+                      onChange={(e) =>
+                        setSocialLinks((prev) => ({ ...prev, [p.key]: e.target.value }))
+                      }
+                      placeholder="https://..."
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
         {updateConfig.isError && <ErrorBanner error={updateConfig.error} />}
         {updateConfig.isSuccess && (
           <p className="text-sm text-green-700">Đã lưu Settings.</p>
@@ -178,6 +248,59 @@ function SettingsForm({ config }: { config: TenantConfig }) {
           {updateConfig.isPending ? 'Đang lưu...' : 'Lưu Settings'}
         </Button>
       </form>
+
+      <BannerImagesSection bannerImages={config.bannerImages} />
+    </div>
+  )
+}
+
+/** Tách khỏi <form> chính — mỗi ảnh upload/xoá gọi API riêng ngay lập tức (đếm giới hạn 5 ảnh
+ * tại đúng thời điểm upload ở backend), không gộp vào action "Lưu Settings" chung. */
+function BannerImagesSection({ bannerImages }: { bannerImages: string[] }) {
+  const addImage = useAddBannerImage()
+  const removeImage = useRemoveBannerImage()
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (file) addImage.mutate(file)
+    e.target.value = ''
+  }
+
+  return (
+    <div className="mt-4 rounded-lg border border-gray-200 bg-white p-4">
+      <h2 className="mb-1 text-sm font-semibold text-gray-700">
+        Ảnh giới thiệu ({bannerImages.length}/5)
+      </h2>
+      <p className="mb-3 text-xs text-gray-400">Ảnh JPG/PNG, tối đa 5MB mỗi ảnh.</p>
+
+      <div className="mb-3 grid grid-cols-3 gap-2 sm:grid-cols-5">
+        {bannerImages.map((url, index) => (
+          <div key={url} className="group relative">
+            <img src={url} alt="" className="h-20 w-full rounded object-cover" />
+            <button
+              type="button"
+              onClick={() => removeImage.mutate(index)}
+              disabled={removeImage.isPending}
+              className="absolute right-1 top-1 rounded-full bg-black/60 px-1.5 py-0.5 text-xs text-white opacity-0 group-hover:opacity-100"
+              aria-label="Xoá ảnh"
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {bannerImages.length < 5 && (
+        <input
+          type="file"
+          accept="image/jpeg,image/png"
+          onChange={handleFileChange}
+          disabled={addImage.isPending}
+          className="block text-sm text-gray-600"
+        />
+      )}
+      {addImage.isError && <ErrorBanner error={addImage.error} />}
+      {removeImage.isError && <ErrorBanner error={removeImage.error} />}
     </div>
   )
 }

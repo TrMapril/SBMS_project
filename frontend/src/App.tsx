@@ -14,11 +14,17 @@ import { WorkflowsPage } from './pages/WorkflowsPage'
 import { WorkflowBuilderPage } from './pages/WorkflowBuilderPage'
 import { TaskBoardPage } from './pages/TaskBoardPage'
 import { DashboardPage } from './pages/DashboardPage'
+import { PublicTenantPage } from './pages/PublicTenantPage'
+import { LeaveRequestsPage } from './pages/LeaveRequestsPage'
+import { PersonnelPage } from './pages/PersonnelPage'
+import { EmployeeProfilePage } from './pages/EmployeeProfilePage'
+import { MyProfileRedirect } from './pages/MyProfileRedirect'
 
 function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/t/:slug" element={<PublicTenantPage />} />
       <Route
         path="/change-password"
         element={
@@ -119,6 +125,18 @@ function App() {
             </ProtectedRoute>
           }
         />
+
+        <Route path="/leave-requests" element={<LeaveRequestsPage />} />
+        <Route
+          path="/personnel"
+          element={
+            <ProtectedRoute roles={['ADMIN', 'MANAGER']}>
+              <PersonnelPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/my-profile" element={<MyProfileRedirect />} />
+        <Route path="/employees/:userId" element={<EmployeeProfilePage />} />
       </Route>
     </Routes>
   )

@@ -4,12 +4,16 @@ import {
   Delete,
   Get,
   Param,
+  ParseIntPipe,
   Patch,
   Post,
   Query,
+  UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { TenantsService } from './tenants.service';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
@@ -51,6 +55,26 @@ export class TenantsController {
     @Body() dto: UpdateTenantConfigDto,
   ) {
     return this.tenantsService.updateMyConfig(tenantId, dto);
+  }
+
+  @Roles('ADMIN')
+  @UseInterceptors(TenantInterceptor, FileInterceptor('file', { storage: memoryStorage() }))
+  @Post('me/config/banner-images')
+  addBannerImage(
+    @CurrentTenant() tenantId: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return this.tenantsService.addBannerImage(tenantId, file);
+  }
+
+  @Roles('ADMIN')
+  @UseInterceptors(TenantInterceptor)
+  @Delete('me/config/banner-images/:index')
+  removeBannerImage(
+    @CurrentTenant() tenantId: string,
+    @Param('index', ParseIntPipe) index: number,
+  ) {
+    return this.tenantsService.removeBannerImage(tenantId, index);
   }
 
   @Post()

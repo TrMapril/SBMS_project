@@ -18,6 +18,9 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/custom-fields', label: 'Custom Fields', roles: ['ADMIN'] },
   { to: '/settings', label: 'Cài đặt', roles: ['ADMIN'] },
   { to: '/projects', label: 'Dự án', roles: ['MANAGER', 'EMPLOYEE'] },
+  { to: '/leave-requests', label: 'Đơn từ', roles: ['ADMIN', 'MANAGER', 'EMPLOYEE'] },
+  { to: '/personnel', label: 'Nhân sự', roles: ['ADMIN', 'MANAGER'] },
+  { to: '/my-profile', label: 'Hồ sơ của tôi', roles: ['ADMIN', 'MANAGER', 'EMPLOYEE'] },
 ]
 
 export function AppLayout() {

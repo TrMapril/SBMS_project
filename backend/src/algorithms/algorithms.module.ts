@@ -16,5 +16,6 @@ import { NotificationsModule } from '../notifications/notifications.module';
     BottleneckService,
     TaskHistoryAnalyticsService,
   ],
+  exports: [TaskHistoryAnalyticsService],
 })
 export class AlgorithmsModule {}

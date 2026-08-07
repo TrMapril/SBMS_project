@@ -151,6 +151,12 @@ export interface TenantConfig {
   logoUrl: string | null
   enabledModules: string[]
   assignmentWeights: AssignmentWeights
+  introText: string | null
+  bannerImages: string[]
+  address: string | null
+  contactPhone: string | null
+  contactEmail: string | null
+  socialLinks: Record<string, string>
   createdAt: string
   updatedAt: string
 }
@@ -254,12 +260,12 @@ export interface BottleneckSnapshot {
   deltaBackwardRateVsPrevious: number | null
 }
 
-/** Đúng 3 event Giai đoạn 6 đã làm — khớp `NotificationEventType` phía backend (xem plan.md
- * Mục "Quy ước Socket.io"). `leave-request:resolved` để dành cho Giai đoạn 7. */
+/** Đúng 4 event liệt kê ở Mục "Quy ước Socket.io" plan.md. */
 export type NotificationEventType =
   | 'task:assigned'
   | 'task:state-changed'
   | 'task:risk-alert'
+  | 'leave-request:resolved'
 
 export interface AppNotification {
   id: string
@@ -269,4 +275,104 @@ export interface AppNotification {
   data: Record<string, unknown>
   isRead: boolean
   createdAt: string
+}
+
+// ---------- Giai đoạn 7 ----------
+
+export interface PublicTenant {
+  slug: string
+  name: string
+  systemName: string | null
+  logoUrl: string | null
+  primaryColor: string | null
+  introText: string | null
+  bannerImages: string[]
+  address: string | null
+  contactPhone: string | null
+  contactEmail: string | null
+  socialLinks: Record<string, string>
+}
+
+export type LeaveRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
+
+export interface LeaveRequest {
+  id: string
+  tenantId: string
+  userId: string
+  startDate: string
+  endDate: string
+  reason: string
+  attachmentUrl: string | null
+  status: LeaveRequestStatus
+  reviewedBy: string | null
+  reviewedAt: string | null
+  reviewComment: string | null
+  createdAt: string
+  updatedAt: string
+  user?: Pick<User, 'id' | 'fullName' | 'email'>
+  reviewer?: Pick<User, 'id' | 'fullName'> | null
+}
+
+export interface CompetencyAutoMetrics {
+  totalCompletedTasks: number
+  onTimeRate: number | null
+  returnCount: number
+  avgProcessingHours: number | null
+}
+
+export interface CompetencyProfileEntry {
+  id: string
+  tenantId: string
+  userId: string
+  periodLabel: string
+  overallRating: number
+  managerNotes: string | null
+  createdBy: string
+  createdAt: string
+  updatedAt: string
+  createdByUser?: Pick<User, 'id' | 'fullName'>
+}
+
+export interface CompetencyProfile {
+  autoMetrics: CompetencyAutoMetrics
+  entries: CompetencyProfileEntry[]
+}
+
+export type PersonnelProposalType = 'PROMOTION' | 'RAISE' | 'WARNING' | 'AWARD'
+export type PersonnelProposalStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
+
+export interface PersonnelProposal {
+  id: string
+  tenantId: string
+  userId: string
+  type: PersonnelProposalType
+  description: string
+  status: PersonnelProposalStatus
+  proposedBy: string
+  reviewedBy: string | null
+  reviewedAt: string | null
+  reviewComment: string | null
+  createdAt: string
+  updatedAt: string
+  user?: Pick<User, 'id' | 'fullName'>
+  proposedByUser?: Pick<User, 'id' | 'fullName'>
+  reviewer?: Pick<User, 'id' | 'fullName'> | null
+}
+
+export interface Certification {
+  name: string
+  issuer?: string
+  year?: number
+}
+
+export interface EmployeeProfile {
+  userId: string
+  fullName: string
+  email: string
+  systemRole: SystemRole
+  phone: string | null
+  address: string | null
+  bio: string | null
+  certifications: Certification[]
+  completedTaskCount: number
 }

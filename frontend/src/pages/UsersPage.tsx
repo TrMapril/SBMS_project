@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import { useCreateUser, useUpdateUserStatus, useUsers } from '../features/users/useUsers'
 import type { SystemRole, UserStatus } from '../lib/types'
 import { Button } from '../components/ui/Button'
@@ -44,7 +45,11 @@ export function UsersPage() {
             <tbody className="divide-y divide-gray-100">
               {data.data.map((u) => (
                 <tr key={u.id}>
-                  <td className="px-4 py-2 text-gray-900">{u.fullName}</td>
+                  <td className="px-4 py-2 text-gray-900">
+                    <Link to={`/employees/${u.id}`} className="hover:text-indigo-600 hover:underline">
+                      {u.fullName}
+                    </Link>
+                  </td>
                   <td className="px-4 py-2 text-gray-600">{u.email}</td>
                   <td className="px-4 py-2 text-gray-600">{u.systemRole}</td>
                   <td className="px-4 py-2">
