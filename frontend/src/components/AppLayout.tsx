@@ -1,5 +1,6 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuthStore } from '../store/auth.store'
+import { NotificationBell } from './NotificationBell'
 import type { SystemRole } from '../lib/types'
 
 interface NavItem {
@@ -57,12 +58,15 @@ export function AppLayout() {
             {user.fullName} <span className="text-gray-300">·</span>{' '}
             <span className="font-medium text-gray-700">{user.systemRole}</span>
           </div>
-          <button
-            onClick={logout}
-            className="text-sm font-medium text-gray-500 hover:text-gray-800"
-          >
-            Đăng xuất
-          </button>
+          <div className="flex items-center gap-3">
+            <NotificationBell />
+            <button
+              onClick={logout}
+              className="text-sm font-medium text-gray-500 hover:text-gray-800"
+            >
+              Đăng xuất
+            </button>
+          </div>
         </header>
         <main className="flex-1 p-6">
           <Outlet />

@@ -8,6 +8,7 @@ import { useUsers } from '../features/users/useUsers'
 import { useCustomFields } from '../features/custom-fields/useCustomFields'
 import { useAssignmentSuggestions } from '../features/algorithms/useAlgorithms'
 import { useAuthStore } from '../store/auth.store'
+import { ApiError } from '../lib/api-client'
 import type { Task, TaskPriority, WorkflowState, WorkflowTransition } from '../lib/types'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
@@ -15,6 +16,19 @@ import { Select } from '../components/ui/Select'
 import { Modal } from '../components/ui/Modal'
 import { ErrorBanner } from '../components/ui/ErrorBanner'
 import { Spinner } from '../components/ui/Spinner'
+
+const CUSTOM_FIELD_ERROR_PREFIX = 'Thiếu Custom Field bắt buộc: '
+const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi
+
+/** BE trả lỗi 400 kèm `customFieldId` (UUID) thô — dịch sang tên field cho dễ đọc trên UI, đúng
+ * quyết định Giai đoạn 4 (đã mở GET /api/custom-fields cho Employee chỉ để phục vụ việc này). */
+function translateCustomFieldError(error: unknown, namesById: Map<string, string>): unknown {
+  if (!(error instanceof ApiError) || !error.message.startsWith(CUSTOM_FIELD_ERROR_PREFIX)) {
+    return error
+  }
+  const translated = error.message.replace(UUID_RE, (id) => namesById.get(id) ?? id)
+  return new ApiError(error.status, translated, error.details)
+}
 
 const PRIORITY_BADGE: Record<TaskPriority, string> = {
   LOW: 'bg-gray-100 text-gray-600',
@@ -32,6 +46,7 @@ export function TaskBoardPage() {
   const { data: tasksPage, isLoading: loadingTasks, error: tasksError } = useTasks(projectId)
   const { data: myRoles } = useMyRoles()
   const { data: users } = useUsers()
+  const { data: customFields } = useCustomFields()
   const isManager = useAuthStore((s) => s.user?.systemRole === 'MANAGER')
   const [showCreate, setShowCreate] = useState(false)
   const [actionError, setActionError] = useState<unknown>(null)
@@ -40,6 +55,10 @@ export function TaskBoardPage() {
   const usersById = useMemo(
     () => new Map((users?.data ?? []).map((u) => [u.id, u])),
     [users],
+  )
+  const customFieldNamesById = useMemo(
+    () => new Map((customFields?.data ?? []).map((f) => [f.id, f.name])),
+    [customFields],
   )
 
   if (loadingProject || loadingWorkflow || loadingTasks) return <Spinner />
@@ -75,7 +94,7 @@ export function TaskBoardPage() {
             transitions={workflow.transitions}
             myRoleIds={myRoleIds}
             assigneeName={(id) => usersById.get(id ?? '')?.fullName}
-            onError={setActionError}
+            onError={(error) => setActionError(translateCustomFieldError(error, customFieldNamesById))}
           />
         ))}
       </div>

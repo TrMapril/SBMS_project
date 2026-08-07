@@ -3,6 +3,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { Task, WorkflowState } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { TaskHistoryAnalyticsService } from './task-history-analytics.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const TENANT_WIDE_DEFAULT_HOURS_PER_STEP = 24;
 const NO_HISTORY_LATE_RATE = 0.5;
@@ -29,6 +30,7 @@ export class RiskScoreService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly analytics: TaskHistoryAnalyticsService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   @Cron(CronExpression.EVERY_HOUR)
@@ -41,6 +43,10 @@ export class RiskScoreService {
       include: { currentState: true },
     });
 
+    // Gom Manager/Admin theo tenant 1 lần, tránh query lặp lại cho mỗi Task vượt ngưỡng trong
+    // cùng 1 tenant (cron chạy qua Task của MỌI tenant trong 1 lượt).
+    const managersByTenant = new Map<string, string[]>();
+
     let alertCount = 0;
     for (const task of tasks) {
       const risk = await this.computeRiskForTask(task, now);
@@ -50,12 +56,28 @@ export class RiskScoreService {
       });
       if (risk > RISK_ALERT_THRESHOLD) {
         alertCount++;
-        // Giai đoạn 6 (notifications) chưa làm — tạm ghi log thay vì gửi thật, đúng quy ước
-        // "Hook automation rỗng" trong plan.md.
         this.logger.warn(
-          `Task ${task.id} "${task.title}" risk_score=${risk.toFixed(1)}% (>${RISK_ALERT_THRESHOLD}%)` +
-            ' — sẽ gửi notification cho Manager khi module notifications (Giai đoạn 6) hoàn tất.',
+          `Task ${task.id} "${task.title}" risk_score=${risk.toFixed(1)}% (>${RISK_ALERT_THRESHOLD}%)`,
         );
+
+        // Task rủi ro trễ deadline là việc Manager/Admin cần biết để điều phối lại, không phải
+        // riêng assignee — giả định ghi trong DECISIONS.md vì tài liệu gốc chỉ nói "cảnh báo",
+        // không chỉ rõ người nhận.
+        if (!managersByTenant.has(task.tenantId)) {
+          const managers = await this.prisma.user.findMany({
+            where: { tenantId: task.tenantId, systemRole: { in: ['ADMIN', 'MANAGER'] } },
+            select: { id: true },
+          });
+          managersByTenant.set(task.tenantId, managers.map((m) => m.id));
+        }
+        const recipients = managersByTenant.get(task.tenantId) ?? [];
+        for (const managerId of recipients) {
+          await this.notifications.notify(task.tenantId, managerId, 'task:risk-alert', {
+            taskId: task.id,
+            taskTitle: task.title,
+            riskScore: Math.round(risk * 10) / 10,
+          });
+        }
       }
     }
 

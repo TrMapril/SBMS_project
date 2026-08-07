@@ -60,6 +60,7 @@ model Tenant {
   projects            Project[]
   customFields        CustomField[]
   bottleneckSnapshots BottleneckSnapshot[]
+  notifications       Notification[]
 
   @@map("tenants")
 }
@@ -102,6 +103,7 @@ model User {
   assignedTasks      Task[]          @relation("TaskAssignee")
   taskHistoryItems   TaskHistory[]   @relation("TaskHistoryActionBy")
   projectMemberships ProjectMember[]
+  notifications      Notification[]
 
   @@map("users")
 }
@@ -342,4 +344,25 @@ model BottleneckSnapshot {
   workflow Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
 
   @@map("bottleneck_snapshots")
+}
+
+/// Giai đoạn 6 — lưu lại notification để đọc khi offline (Mục "Phạm vi" plan.md: "lưu DB để đọc
+/// lại khi offline"). `type` khớp đúng tên event Socket.io ở Mục "Quy ước Socket.io" plan.md
+/// (`task:assigned`, `task:state-changed`, `task:risk-alert`) — `data` là phần `data` của cùng
+/// payload đã gửi qua socket lúc phát sinh, không phải cấu trúc riêng, để FE dùng lại 1 component
+/// render cho cả 2 nguồn (nhận realtime lẫn đọc lại từ API danh sách).
+model Notification {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  userId    String   @map("user_id")
+  type      String
+  data      Json
+  isRead    Boolean  @default(false) @map("is_read")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId, isRead])
+  @@map("notifications")
 }

@@ -248,6 +248,12 @@ function BuilderCanvas({
         )}
         {selection?.type === 'state' && (
           <StatePanel
+            // `key` bắt buộc phải theo đúng id đang chỉnh sửa — không có key, React coi đây vẫn
+            // là CÙNG 1 instance khi click thẳng từ State này sang State khác (không qua click ra
+            // nền trống), nên các useState nội bộ (name/isStart/isEnd/isActive) không tự re-init
+            // theo props mới, giữ nguyên giá trị của State trước đó. `key` ép React unmount +
+            // remount hẳn instance mới mỗi khi id đổi, đảm bảo state luôn khởi tạo lại đúng.
+            key={selection.state.id}
             workflowId={workflowId}
             state={selection.state}
             onClose={() => setSelection(null)}
@@ -255,6 +261,9 @@ function BuilderCanvas({
         )}
         {selection?.type === 'transition' && (
           <TransitionPanel
+            // Cùng lý do với StatePanel ở trên — bug thật đã xảy ra: click thẳng Transition A
+            // sang B không qua nền trống, panel giữ nguyên allow_roles/condition/is_active của A.
+            key={selection.transition.id}
             workflowId={workflowId}
             fromStateId={selection.transition.fromStateId}
             toStateId={selection.transition.toStateId}
@@ -266,6 +275,9 @@ function BuilderCanvas({
         )}
         {selection?.type === 'new-transition' && (
           <TransitionPanel
+            // Cùng lý do: kéo nối cặp State A→B rồi kéo nối tiếp cặp khác C→D (không qua nền
+            // trống) cũng phải reset form nháp, không giữ lại dữ liệu đang gõ dở của cặp trước.
+            key={`new-${selection.fromStateId}-${selection.toStateId}`}
             workflowId={workflowId}
             fromStateId={selection.fromStateId}
             toStateId={selection.toStateId}

@@ -9,6 +9,8 @@ import {
 import { WorkflowTransition } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { TransitionCondition } from './types/transition-condition.type';
+import { WorkflowCacheService, WorkflowStructure } from './workflow-cache.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 export interface TransitionParams {
   tenantId: string;
@@ -39,16 +41,22 @@ export interface TransitionParams {
 export class WorkflowEngineService {
   private readonly logger = new Logger(WorkflowEngineService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly workflowCache: WorkflowCacheService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   async transition(params: TransitionParams) {
     const { tenantId, taskId, userId, transitionId, expectedVersion, comment } =
       params;
 
     // Bước 1: lấy trạng thái hiện tại — đọc DUY NHẤT 1 LẦN, dùng làm snapshot chung cho mọi
-    // bước kiểm tra bên dưới (không đọc lại task ở đâu khác trong hàm này).
+    // bước kiểm tra bên dưới (không đọc lại task ở đâu khác trong hàm này). Kèm workflowId của
+    // Project (qua currentState, không cần join thêm bảng) để tra cấu trúc Workflow trong cache.
     const task = await this.prisma.task.findFirst({
       where: { id: taskId, tenantId },
+      include: { currentState: { select: { workflowId: true } } },
     });
     if (!task) {
       throw new NotFoundException('Không tìm thấy Task');
@@ -67,14 +75,13 @@ export class WorkflowEngineService {
       );
     }
 
-    // Bước 2: tìm transition hợp lệ từ trạng thái hiện tại (dùng snapshot ở Bước 1, không đọc lại)
-    const transition = await this.prisma.workflowTransition.findFirst({
-      where: {
-        id: transitionId,
-        fromStateId: task.currentStateId,
-        isActive: true,
-      },
-    });
+    // Bước 2: tìm transition hợp lệ từ trạng thái hiện tại (dùng snapshot ở Bước 1, không đọc
+    // lại) — đọc từ cấu trúc Workflow đã cache (Mục 3.8 CLAUDE.md), không query DB trực tiếp mỗi
+    // lần transition.
+    const structure = await this.getStructure(task.currentState.workflowId);
+    const transition = structure.transitions.find(
+      (t) => t.id === transitionId && t.fromStateId === task.currentStateId,
+    );
     if (!transition) {
       throw new BadRequestException(
         'Transition không hợp lệ từ trạng thái hiện tại của Task',
@@ -114,10 +121,31 @@ export class WorkflowEngineService {
       });
     });
 
-    // Bước 7: hook automation rỗng cho tương lai (Mục "Quy ước chuẩn" trong plan.md)
-    this.onTransitionCompleted(taskId, transition);
+    // Bước 7: hook automation rỗng cho tương lai (Mục "Quy ước chuẩn" trong plan.md) — Giai đoạn
+    // 6 nối thêm đúng 1 việc cụ thể vào hook này: bắn notification `task:state-changed` cho
+    // assignee, không mở rộng thành automation engine tổng quát.
+    await this.onTransitionCompleted(tenantId, task, transition, structure);
 
     return this.prisma.task.findUniqueOrThrow({ where: { id: taskId } });
+  }
+
+  /**
+   * Cấu trúc Workflow (states + transitions active) — cache in-memory, không TTL (Mục 3.8
+   * CLAUDE.md). WorkflowService gọi `workflowCache.invalidate(workflowId)` ngay khi Admin sửa
+   * State/Transition ở Workflow Builder, đây là NƠI DUY NHẤT đọc lại từ DB sau khi cache miss.
+   */
+  private async getStructure(workflowId: string): Promise<WorkflowStructure> {
+    return this.workflowCache.getOrLoad(workflowId, async () => {
+      const [states, transitions] = await Promise.all([
+        this.prisma.workflowState.findMany({
+          where: { workflowId, isActive: true },
+        }),
+        this.prisma.workflowTransition.findMany({
+          where: { workflowId, isActive: true },
+        }),
+      ]);
+      return { states, transitions };
+    });
   }
 
   private async assertRolePermission(
@@ -176,13 +204,27 @@ export class WorkflowEngineService {
     }
   }
 
-  /** Hook automation rỗng — hiện chỉ log, chưa gửi email/webhook thật (xem plan.md). */
-  private onTransitionCompleted(
-    taskId: string,
-    transition: { id: string; name: string },
+  /** Hook automation — vẫn "rỗng" đúng nghĩa (không gửi email/webhook thật), chỉ nối thêm
+   * notification realtime cho assignee khi Task đổi trạng thái (xem plan.md). Task không có
+   * assignee thì không có ai để báo, bỏ qua — không coi là lỗi. */
+  private async onTransitionCompleted(
+    tenantId: string,
+    task: { id: string; title: string; assigneeId: string | null },
+    transition: WorkflowTransition,
+    structure: WorkflowStructure,
   ) {
     this.logger.log(
-      `Task ${taskId} hoàn tất transition "${transition.name}" (${transition.id})`,
+      `Task ${task.id} hoàn tất transition "${transition.name}" (${transition.id})`,
     );
+
+    if (!task.assigneeId) return;
+    const toState = structure.states.find((s) => s.id === transition.toStateId);
+    await this.notifications.notify(tenantId, task.assigneeId, 'task:state-changed', {
+      taskId: task.id,
+      taskTitle: task.title,
+      transitionName: transition.name,
+      toStateId: transition.toStateId,
+      toStateName: toState?.name ?? null,
+    });
   }
 }

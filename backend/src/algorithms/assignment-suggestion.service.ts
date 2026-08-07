@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
+import { TenantsService } from '../tenants/tenants.service';
 import { TaskHistoryAnalyticsService } from './task-history-analytics.service';
 import {
   AssignmentWeights,
@@ -25,6 +26,7 @@ export class AssignmentSuggestionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly analytics: TaskHistoryAnalyticsService,
+    private readonly tenantsService: TenantsService,
   ) {}
 
   async getSuggestions(
@@ -54,9 +56,11 @@ export class AssignmentSuggestionService {
     if (members.length === 0) return [];
     const userIds = members.map((m) => m.userId);
 
-    const config = await this.prisma.tenantConfig.findUnique({ where: { tenantId } });
+    // Đọc qua TenantsService (đã cache — Mục 3.8 CLAUDE.md), không tự query tenantConfig trực
+    // tiếp nữa để tránh 2 nơi cache/đọc rời rạc cho cùng 1 dữ liệu.
+    const config = await this.tenantsService.getMyConfig(tenantId);
     const weights =
-      (config?.assignmentWeights as unknown as AssignmentWeights) ??
+      (config.assignmentWeights as unknown as AssignmentWeights) ??
       DEFAULT_ASSIGNMENT_WEIGHTS;
 
     const [workloadScores, onTimeScores, stepSpeedScores, returnScores] =

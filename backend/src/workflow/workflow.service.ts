@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { CreateWorkflowDto } from './dto/create-workflow.dto';
@@ -11,10 +12,14 @@ import { CreateWorkflowStateDto } from './dto/create-workflow-state.dto';
 import { UpdateWorkflowStateDto } from './dto/update-workflow-state.dto';
 import { CreateWorkflowTransitionDto } from './dto/create-workflow-transition.dto';
 import { UpdateWorkflowTransitionDto } from './dto/update-workflow-transition.dto';
+import { WorkflowCacheService } from './workflow-cache.service';
 
 @Injectable()
 export class WorkflowService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly workflowCache: WorkflowCacheService,
+  ) {}
 
   // ---------- Workflow ----------
 
@@ -86,6 +91,7 @@ export class WorkflowService {
       );
     }
     await this.prisma.workflow.delete({ where: { id } });
+    await this.workflowCache.invalidate(id);
     return { id };
   }
 
@@ -166,10 +172,13 @@ export class WorkflowService {
 
     if (dto.positionX != null) {
       await this.resyncOrderIndexByPosition(workflowId);
-      return this.prisma.workflowState.findUniqueOrThrow({
+      created = await this.prisma.workflowState.findUniqueOrThrow({
         where: { id: created.id },
       });
     }
+    // Invalidate NGAY cache cấu trúc Workflow (Mục 3.8 CLAUDE.md) — không đợi TTL, để lần
+    // transition tiếp theo của WorkflowEngineService thấy State mới ngay lập tức.
+    await this.workflowCache.invalidate(workflowId);
     return created;
   }
 
@@ -215,6 +224,7 @@ export class WorkflowService {
     if (dto.positionX != null) {
       await this.resyncOrderIndexByPosition(workflowId);
     }
+    await this.workflowCache.invalidate(workflowId);
     return this.prisma.workflowState.findUniqueOrThrow({ where: { id: stateId } });
   }
 
@@ -231,6 +241,7 @@ export class WorkflowService {
       );
     }
     await this.prisma.workflowState.delete({ where: { id: stateId } });
+    await this.workflowCache.invalidate(workflowId);
     return { id: stateId };
   }
 
@@ -246,7 +257,7 @@ export class WorkflowService {
     await this.assertStateInWorkflow(workflowId, dto.toStateId);
     await this.assertRolesInTenant(tenantId, dto.allowRoles);
 
-    return this.prisma.workflowTransition.create({
+    const created = await this.prisma.workflowTransition.create({
       data: {
         workflowId,
         name: dto.name,
@@ -256,6 +267,8 @@ export class WorkflowService {
         condition: dto.condition ? { ...dto.condition } : undefined,
       },
     });
+    await this.workflowCache.invalidate(workflowId);
+    return created;
   }
 
   async findAllTransitions(tenantId: string, workflowId: string) {
@@ -306,13 +319,28 @@ export class WorkflowService {
     }
     await this.assertRolesInTenant(tenantId, dto.allowRoles);
 
-    return this.prisma.workflowTransition.update({
+    // Phân biệt rõ 3 trường hợp của `condition`: không gửi field này (undefined — giữ nguyên giá
+    // trị cũ), gửi "condition": null (Prisma.JsonNull — XOÁ condition cũ), hoặc gửi 1 object mới
+    // (ghi đè). Trước đây coi cả undefined lẫn null là "undefined" nên không thể xoá condition
+    // đã có qua PATCH — bug phát hiện khi test cache Giai đoạn 6, xem DECISIONS.md #21.
+    let conditionUpdate: Prisma.InputJsonValue | typeof Prisma.JsonNull | undefined;
+    if (dto.condition === undefined) {
+      conditionUpdate = undefined;
+    } else if (dto.condition === null) {
+      conditionUpdate = Prisma.JsonNull;
+    } else {
+      conditionUpdate = { ...dto.condition };
+    }
+
+    const updated = await this.prisma.workflowTransition.update({
       where: { id: transitionId },
       data: {
         ...dto,
-        condition: dto.condition ? { ...dto.condition } : undefined,
+        condition: conditionUpdate,
       },
     });
+    await this.workflowCache.invalidate(workflowId);
+    return updated;
   }
 
   async removeTransition(
@@ -334,6 +362,7 @@ export class WorkflowService {
     await this.prisma.workflowTransition.delete({
       where: { id: transitionId },
     });
+    await this.workflowCache.invalidate(workflowId);
     return { id: transitionId };
   }
 }

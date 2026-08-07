@@ -253,3 +253,20 @@ export interface BottleneckSnapshot {
   overallBackwardRate: number
   deltaBackwardRateVsPrevious: number | null
 }
+
+/** Đúng 3 event Giai đoạn 6 đã làm — khớp `NotificationEventType` phía backend (xem plan.md
+ * Mục "Quy ước Socket.io"). `leave-request:resolved` để dành cho Giai đoạn 7. */
+export type NotificationEventType =
+  | 'task:assigned'
+  | 'task:state-changed'
+  | 'task:risk-alert'
+
+export interface AppNotification {
+  id: string
+  tenantId: string
+  userId: string
+  type: NotificationEventType
+  data: Record<string, unknown>
+  isRead: boolean
+  createdAt: string
+}

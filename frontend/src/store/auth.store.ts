@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { setAuthToken } from '../lib/api-client'
+import { connectSocket, disconnectSocket } from '../lib/socket'
 import type { User } from '../lib/types'
 
 interface AuthState {
@@ -18,11 +19,13 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       setSession: (accessToken, user) => {
         setAuthToken(accessToken)
+        connectSocket(accessToken)
         set({ accessToken, user })
       },
       setUser: (user) => set({ user }),
       logout: () => {
         setAuthToken(null)
+        disconnectSocket()
         set({ accessToken: null, user: null })
       },
     }),
@@ -31,6 +34,7 @@ export const useAuthStore = create<AuthState>()(
       onRehydrateStorage: () => (state) => {
         if (state?.accessToken) {
           setAuthToken(state.accessToken)
+          connectSocket(state.accessToken)
         }
       },
     },

@@ -361,3 +361,22 @@ CREATE POLICY bottleneck_snapshots_tenant_isolation ON bottleneck_snapshots
     current_setting('app.is_super_admin', true) = 'true'
     OR tenant_id = current_setting('app.current_tenant_id', true)
   );
+
+-- ============================================================================
+-- Giai đoạn 6: notifications
+-- ============================================================================
+
+ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notifications FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS notifications_tenant_isolation ON notifications;
+CREATE POLICY notifications_tenant_isolation ON notifications
+  FOR ALL
+  USING (
+    current_setting('app.is_super_admin', true) = 'true'
+    OR tenant_id = current_setting('app.current_tenant_id', true)
+  )
+  WITH CHECK (
+    current_setting('app.is_super_admin', true) = 'true'
+    OR tenant_id = current_setting('app.current_tenant_id', true)
+  );

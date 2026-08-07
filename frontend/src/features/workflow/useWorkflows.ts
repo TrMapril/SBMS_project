@@ -74,7 +74,7 @@ interface CreateTransitionInput {
   fromStateId: string
   toStateId: string
   allowRoles?: string[]
-  condition?: TransitionCondition
+  condition?: TransitionCondition | null
 }
 
 interface UpdateTransitionInput extends Partial<CreateTransitionInput> {

@@ -7,6 +7,7 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { WorkflowEngineService } from '../workflow/workflow-engine.service';
 import { CustomFieldsService } from '../custom-fields/custom-fields.service';
 import { ProjectsService } from '../projects/projects.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { TransitionTaskDto } from './dto/transition-task.dto';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { AssignCustomFieldValuesDto } from './dto/assign-custom-field-values.dto';
@@ -20,6 +21,7 @@ export class TasksService {
     private readonly workflowEngine: WorkflowEngineService,
     private readonly customFieldsService: CustomFieldsService,
     private readonly projectsService: ProjectsService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async create(tenantId: string, dto: CreateTaskDto) {
@@ -55,7 +57,7 @@ export class TasksService {
         )
       : [];
 
-    return this.prisma.$transaction(async (tx) => {
+    const created = await this.prisma.$transaction(async (tx) => {
       const task = await tx.task.create({
         data: {
           tenantId,
@@ -83,6 +85,22 @@ export class TasksService {
         where: { id: task.id },
         include: { customFieldValues: true },
       });
+    });
+
+    await this.notifyTaskAssigned(tenantId, created);
+    return created;
+  }
+
+  /** Tách riêng khỏi `create()` — notification gọi Socket.io/DB riêng, không cần nằm trong
+   * transaction tạo Task (transaction rollback không nên phụ thuộc việc gửi notification). */
+  private async notifyTaskAssigned(
+    tenantId: string,
+    task: { id: string; title: string; assigneeId: string | null },
+  ) {
+    if (!task.assigneeId) return;
+    await this.notifications.notify(tenantId, task.assigneeId, 'task:assigned', {
+      taskId: task.id,
+      taskTitle: task.title,
     });
   }
 

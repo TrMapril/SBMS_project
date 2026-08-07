@@ -1,10 +1,13 @@
 import {
   BadRequestException,
   ConflictException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
+import { Prisma, TenantConfig } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { CreateTenantDto } from './dto/create-tenant.dto';
@@ -13,23 +16,36 @@ import { UpdateTenantConfigDto } from './dto/update-tenant-config.dto';
 
 @Injectable()
 export class TenantsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(CACHE_MANAGER) private readonly cache: Cache,
+  ) {}
+
+  private configCacheKey(tenantId: string): string {
+    return `tenant-config:${tenantId}`;
+  }
 
   /** Admin của tenant tự xem/sửa Settings (theme, module bật/tắt) — khác với CRUD tenant ở
-   * trên vốn chỉ Super Admin dùng để quản lý toàn bộ tenant trong hệ thống. */
+   * trên vốn chỉ Super Admin dùng để quản lý toàn bộ tenant trong hệ thống. Cache in-memory,
+   * không TTL (Mục 3.8 CLAUDE.md) — `updateMyConfig` invalidate ngay khi Admin lưu Settings. */
   async getMyConfig(tenantId: string) {
+    const cacheKey = this.configCacheKey(tenantId);
+    const cached = await this.cache.get<TenantConfig>(cacheKey);
+    if (cached) return cached;
+
     const config = await this.prisma.tenantConfig.findUnique({
       where: { tenantId },
     });
     if (!config) {
       throw new NotFoundException('Không tìm thấy tenant_config');
     }
+    await this.cache.set(cacheKey, config);
     return config;
   }
 
   async updateMyConfig(tenantId: string, dto: UpdateTenantConfigDto) {
     await this.getMyConfig(tenantId);
-    return this.prisma.tenantConfig.update({
+    const updated = await this.prisma.tenantConfig.update({
       where: { tenantId },
       data: {
         ...dto,
@@ -38,6 +54,8 @@ export class TenantsService {
           : undefined,
       },
     });
+    await this.cache.del(this.configCacheKey(tenantId));
+    return updated;
   }
 
   async create(dto: CreateTenantDto) {

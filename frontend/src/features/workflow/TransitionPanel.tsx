@@ -46,8 +46,12 @@ export function TransitionPanel({
     return list.includes(value) ? list.filter((v) => v !== value) : [...list, value]
   }
 
+  /** Luôn trả về giá trị tường minh (object hoặc `null`), KHÔNG BAO GIỜ `undefined` — form này
+   * quản lý toàn bộ 2 field con của condition nên mỗi lần Lưu phải gửi đúng trạng thái hiện tại,
+   * không được để `undefined` khiến `apiClient` bỏ qua field `condition` trong JSON gửi lên (khi
+   * đó PATCH backend hiểu là "giữ nguyên giá trị cũ", không xoá được condition đã có). */
   function buildCondition() {
-    if (!requireAssignee && requireCustomFields.length === 0) return undefined
+    if (!requireAssignee && requireCustomFields.length === 0) return null
     return {
       ...(requireAssignee ? { requireAssignee: true } : {}),
       ...(requireCustomFields.length > 0 ? { requireCustomFields } : {}),
