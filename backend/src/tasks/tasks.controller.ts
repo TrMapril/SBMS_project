@@ -70,4 +70,20 @@ export class TasksController {
   ) {
     return this.tasksService.transition(tenantId, id, user.userId, dto);
   }
+
+  // Không @Roles() — quyền xét theo "là assignee của Task" trong Service, không theo System Role.
+  @Post(':id/report-done')
+  reportDone(
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+  ) {
+    return this.tasksService.reportDone(tenantId, id, user.userId);
+  }
+
+  @Roles('MANAGER')
+  @Post(':id/confirm-done')
+  confirmDone(@CurrentTenant() tenantId: string, @Param('id') id: string) {
+    return this.tasksService.confirmDone(tenantId, id);
+  }
 }

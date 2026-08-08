@@ -18,6 +18,7 @@ import { TenantsService } from './tenants.service';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
 import { UpdateTenantConfigDto } from './dto/update-tenant-config.dto';
+import { UpdateMaxEmployeesDto } from './dto/update-max-employees.dto';
 import { CreateTenantAdminDto } from './dto/create-tenant-admin.dto';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -95,6 +96,12 @@ export class TenantsController {
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: UpdateTenantDto) {
     return this.tenantsService.update(id, dto);
+  }
+
+  /** Phase 7.5 Đợt 1 mục F — kế thừa @Roles('SUPER_ADMIN') ở mức controller, không override. */
+  @Patch(':id/max-employees')
+  updateMaxEmployees(@Param('id') id: string, @Body() dto: UpdateMaxEmployeesDto) {
+    return this.tenantsService.updateMaxEmployees(id, dto);
   }
 
   @Delete(':id')

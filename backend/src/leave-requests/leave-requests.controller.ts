@@ -23,8 +23,9 @@ import { CurrentTenant } from '../common/decorators/current-tenant.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../common/types/jwt-payload.type';
 
-// Không @Roles() ở mức controller — mở cho mọi user đã đăng nhập trong tenant (Employee gửi
-// đơn/xem đơn của mình, Manager/Admin xem+duyệt mọi đơn). Chỉ `resolve` giới hạn Manager/Admin.
+// Không @Roles() ở mức controller — mở cho mọi user đã đăng nhập trong tenant (Employee/Admin
+// gửi đơn/xem đơn của mình, Manager xem+duyệt mọi đơn). Từ Phase 7.5: `resolve`/`reset-task` chỉ
+// còn Manager (Admin không còn duyệt được nữa — xem "Quyết định nền tảng" #2 phase_7_5.md).
 @UseGuards(JwtAuthGuard, RolesGuard)
 @UseInterceptors(TenantInterceptor)
 @Controller('leave-requests')
@@ -60,7 +61,9 @@ export class LeaveRequestsController {
     return this.leaveRequestsService.findOne(tenantId, id, user);
   }
 
-  @Roles('MANAGER', 'ADMIN')
+  // Phase 7.5 "Quyết định nền tảng" #2 — CHỈ Manager duyệt được, không còn Admin (thu hẹp so với
+  // Giai đoạn 7).
+  @Roles('MANAGER')
   @Post(':id/resolve')
   resolve(
     @CurrentTenant() tenantId: string,
@@ -69,5 +72,15 @@ export class LeaveRequestsController {
     @Body() dto: ResolveLeaveRequestDto,
   ) {
     return this.leaveRequestsService.resolve(tenantId, id, user.userId, dto);
+  }
+
+  @Roles('MANAGER')
+  @Post(':id/reset-task')
+  resetTask(
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+  ) {
+    return this.leaveRequestsService.resetTask(tenantId, id, user.userId);
   }
 }

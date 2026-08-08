@@ -15,6 +15,7 @@ import { assertValidUpload, UploadedFileLike } from '../common/utils/file-valida
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
 import { UpdateTenantConfigDto } from './dto/update-tenant-config.dto';
+import { UpdateMaxEmployeesDto } from './dto/update-max-employees.dto';
 
 const BANNER_IMAGE_MAX_COUNT = 5;
 const BANNER_IMAGE_MIME_TYPES = ['image/jpeg', 'image/png'];
@@ -99,6 +100,19 @@ export class TenantsService {
     const updated = await this.prisma.tenantConfig.update({
       where: { tenantId },
       data: { bannerImages: images },
+    });
+    await this.cache.del(this.configCacheKey(tenantId));
+    return updated;
+  }
+
+  /** Phase 7.5 Đợt 1 mục F — CHỈ Super Admin gọi được (route riêng, không đi qua
+   * PATCH /tenants/me/config vốn Admin tenant tự sửa). tenant_config đang cache (Mục 3.8
+   * CLAUDE.md) nên phải invalidate ngay dù sửa qua đường khác với updateMyConfig. */
+  async updateMaxEmployees(tenantId: string, dto: UpdateMaxEmployeesDto) {
+    await this.getMyConfig(tenantId);
+    const updated = await this.prisma.tenantConfig.update({
+      where: { tenantId },
+      data: { maxEmployees: dto.maxEmployees },
     });
     await this.cache.del(this.configCacheKey(tenantId));
     return updated;

@@ -5,4 +5,8 @@ export class ListLeaveRequestsQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsIn(['PENDING', 'APPROVED', 'REJECTED'])
   status?: 'PENDING' | 'APPROVED' | 'REJECTED';
+
+  @IsOptional()
+  @IsIn(['LEAVE', 'TASK_RETURN'])
+  type?: 'LEAVE' | 'TASK_RETURN';
 }

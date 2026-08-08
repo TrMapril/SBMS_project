@@ -70,6 +70,34 @@ enum PersonnelProposalStatus {
   @@map("personnel_proposal_status")
 }
 
+/// Phase 7.5 Đợt 1 mục A.
+enum ProjectStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+
+  @@map("project_status")
+}
+
+/// Phase 7.5 Đợt 1 mục C — KHÁC `users.status` (toàn hệ thống, do Admin quản lý). Đây là trạng
+/// thái thành viên trong PHẠM VI 1 project cụ thể, do Manager quản lý.
+enum ProjectMemberStatus {
+  ACTIVE
+  PAUSED
+
+  @@map("project_member_status")
+}
+
+/// Phase 7.5 Đợt 1 mục D — mở rộng `leave_requests` (Giai đoạn 7) thành khái niệm "đơn từ" chung
+/// hơn, giữ nguyên tên bảng cũ (chỉ thêm cột) theo đúng lựa chọn đơn giản nhất phase_7_5.md cho
+/// phép, tránh phải xin xác nhận đổi tên bảng.
+enum RequestType {
+  LEAVE
+  TASK_RETURN
+
+  @@map("request_type")
+}
+
 model Tenant {
   id        String   @id @default(uuid())
   name      String
@@ -109,6 +137,11 @@ model TenantConfig {
   /// Trọng số Thuật toán 1 (gợi ý phân công) — 4 khoá cố định workload/onTimeRate/stepSpeed/
   /// returnRate, mặc định W1=0.30/W2=0.30/W3=0.25/W4=0.15 đúng tài liệu phân tích thiết kế Mục 4.4.
   assignmentWeights Json    @default("{\"workload\":0.3,\"onTimeRate\":0.3,\"stepSpeed\":0.25,\"returnRate\":0.15}") @map("assignment_weights")
+
+  /// Phase 7.5 Đợt 1 mục F — giới hạn số nhân sự tối đa/tenant, CHỈ Super Admin sửa được (khác
+  /// mọi field khác trong bảng này vốn do Admin tenant tự quản lý qua PATCH /tenants/me/config).
+  /// `null` = không giới hạn.
+  maxEmployees Int? @map("max_employees")
 
   /// Giai đoạn 7 — nội dung trang giới thiệu doanh nghiệp public (Mục 4.8 tài liệu phân tích
   /// thiết kế), đọc qua GET /api/public/tenant/:slug (không cần JWT). `slug` dùng cho route này
@@ -162,11 +195,13 @@ model User {
 }
 
 model Role {
-  id        String   @id @default(uuid())
-  tenantId  String   @map("tenant_id")
-  name      String
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  name        String
+  /// Phase 7.5 Đợt 1 mục E.
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
   tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   userRoles UserRole[]
@@ -263,42 +298,52 @@ model WorkflowTemplate {
 }
 
 model Task {
-  id                 String       @id @default(uuid())
-  tenantId           String       @map("tenant_id")
-  projectId          String       @map("project_id")
-  title              String
-  description        String?
-  currentStateId     String       @map("current_state_id")
-  assigneeId         String?      @map("assignee_id")
-  priority           TaskPriority @default(MEDIUM)
-  version            Int          @default(1)
+  id                      String       @id @default(uuid())
+  tenantId                String       @map("tenant_id")
+  projectId               String       @map("project_id")
+  title                   String
+  description             String?
+  currentStateId          String       @map("current_state_id")
+  assigneeId              String?      @map("assignee_id")
+  priority                TaskPriority @default(MEDIUM)
+  version                 Int          @default(1)
   /// Hạn hoàn thành — dùng bởi Thuật toán 1 (tỷ lệ hoàn thành đúng hạn) và Thuật toán 2 (risk
   /// score). Task không có deadline không được tính risk_score (Giai đoạn 5, xem DECISIONS.md).
-  deadline           DateTime?    @map("deadline")
+  deadline                DateTime?    @map("deadline")
   /// % nguy cơ trễ deadline (0-100), Thuật toán 2 cập nhật định kỳ — null nghĩa là chưa từng
   /// tính (task không có deadline, hoặc đã ở trạng thái is_end).
-  riskScore          Float?       @map("risk_score")
-  riskScoreUpdatedAt DateTime?    @map("risk_score_updated_at")
-  createdAt          DateTime     @default(now()) @map("created_at")
-  updatedAt          DateTime     @updatedAt @map("updated_at")
+  riskScore               Float?       @map("risk_score")
+  riskScoreUpdatedAt      DateTime?    @map("risk_score_updated_at")
+  /// Phase 7.5 Đợt 1 mục B — luồng Report Done / Xác nhận Done, KHÔNG phải transition trong
+  /// Workflow Engine (Mục 3.1 CLAUDE.md: không hard-code state name). Assignee bấm "Report Done"
+  /// khi currentState.isEnd=true → pendingDoneConfirmation=true; Manager "Xác nhận Done" →
+  /// completedAt được set, Task bị khoá vĩnh viễn (không transition được nữa, kể cả Reopen).
+  pendingDoneConfirmation Boolean      @default(false) @map("pending_done_confirmation")
+  completedAt             DateTime?    @map("completed_at")
+  createdAt               DateTime     @default(now()) @map("created_at")
+  updatedAt               DateTime     @updatedAt @map("updated_at")
 
-  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  project           Project            @relation(fields: [projectId], references: [id])
-  currentState      WorkflowState      @relation(fields: [currentStateId], references: [id])
-  assignee          User?              @relation("TaskAssignee", fields: [assigneeId], references: [id])
-  history           TaskHistory[]
-  customFieldValues CustomFieldValue[]
+  tenant             Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project            Project            @relation(fields: [projectId], references: [id])
+  currentState       WorkflowState      @relation(fields: [currentStateId], references: [id])
+  assignee           User?              @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  history            TaskHistory[]
+  customFieldValues  CustomFieldValue[]
+  taskReturnRequests LeaveRequest[]
 
   @@map("tasks")
 }
 
 model Project {
-  id         String   @id @default(uuid())
-  tenantId   String   @map("tenant_id")
-  workflowId String   @map("workflow_id")
+  id         String        @id @default(uuid())
+  tenantId   String        @map("tenant_id")
+  workflowId String        @map("workflow_id")
   name       String
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
+  /// Phase 7.5 Đợt 1 mục A — CANCELLED/ACTIVE do Manager đổi thủ công qua API; COMPLETED tự động
+  /// khi 100% Task của project đã bị khoá (`tasks.completed_at`, xem mục B).
+  status     ProjectStatus @default(ACTIVE)
+  createdAt  DateTime      @default(now()) @map("created_at")
+  updatedAt  DateTime      @updatedAt @map("updated_at")
 
   tenant   Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   workflow Workflow        @relation(fields: [workflowId], references: [id])
@@ -309,10 +354,14 @@ model Project {
 }
 
 model ProjectMember {
-  id        String   @id @default(uuid())
-  projectId String   @map("project_id")
-  userId    String   @map("user_id")
-  createdAt DateTime @default(now()) @map("created_at")
+  id        String              @id @default(uuid())
+  projectId String              @map("project_id")
+  userId    String              @map("user_id")
+  /// Phase 7.5 Đợt 1 mục C — Manager tạm dừng 1 thành viên trong PHẠM VI project này, khác hẳn
+  /// `users.status` (Admin khoá toàn hệ thống). Xoá member chỉ cho phép khi chưa từng có Task nào
+  /// đang giao cho họ trong project này — nếu có, chỉ cho phép PAUSED.
+  status    ProjectMemberStatus @default(ACTIVE)
+  createdAt DateTime            @default(now()) @map("created_at")
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -421,29 +470,43 @@ model Notification {
 }
 
 /// Giai đoạn 7 — đơn từ nội bộ (nghỉ phép, công tác...). File đính kèm tuỳ chọn, lưu Supabase
-/// Storage (giới hạn 5MB, kiểm tra magic bytes — Mục "Giới hạn file upload" plan.md). Không có
-/// khái niệm "quản lý trực tiếp" trong data model hiện tại (User không có managerId) nên MỌI
-/// Manager/Admin trong tenant đều xem và duyệt được mọi đơn — giả định đơn giản nhất phù hợp
-/// Mục 8 CLAUDE.md, ghi rõ trong DECISIONS.md. Duyệt xong bắn `leave-request:resolved` cho
-/// người gửi, đúng event đã đặt tên sẵn ở Mục "Quy ước Socket.io" plan.md từ Giai đoạn 6.
+/// Storage (giới hạn 5MB, kiểm tra magic bytes — Mục "Giới hạn file upload" plan.md).
+/// Phase 7.5 Đợt 1 mục D mở rộng thêm loại `TASK_RETURN` (Employee "trả task" kèm lý do) — giữ
+/// nguyên tên bảng cũ + thêm cột `type`/`taskId`/`taskResetAt` thay vì đổi tên bảng (lựa chọn đơn
+/// giản nhất phase_7_5.md cho phép). `startDate`/`endDate` chỉ bắt buộc khi `type=LEAVE`, validate
+/// ở tầng Service (Mục 3.5/3.6 CLAUDE.md — không ràng buộc DB theo điều kiện). Với `TASK_RETURN`,
+/// `status` dùng lại đúng APPROVED/REJECTED nhưng NGỮ NGHĨA là "lý do phù hợp"/"lý do không phù
+/// hợp" (FE tự đổi label theo `type`, không thêm enum mới) — REJECTED tính vào đánh giá năng lực
+/// (xem `CompetencyProfilesService`). `taskResetAt` đánh dấu đã bấm "Reset" cho Task liên quan
+/// chưa, chỉ áp dụng khi `type=TASK_RETURN` và đã resolve.
+///
+/// Từ Phase 7.5: CHỈ Manager duyệt được (không phải Admin nữa — thu hẹp so với DECISIONS.md #25),
+/// Admin vẫn gửi đơn được như Employee. Không có khái niệm "quản lý trực tiếp" (User không có
+/// managerId) nên Manager DUY NHẤT của tenant (Phase 7.5 ràng buộc 1 tenant 1 Manager) xem/duyệt
+/// được mọi đơn. Duyệt xong bắn `leave-request:resolved` cho người gửi, đúng event đã đặt tên sẵn
+/// ở Mục "Quy ước Socket.io" plan.md từ Giai đoạn 6.
 model LeaveRequest {
   id            String             @id @default(uuid())
   tenantId      String             @map("tenant_id")
   userId        String             @map("user_id")
-  startDate     DateTime           @map("start_date")
-  endDate       DateTime           @map("end_date")
+  type          RequestType        @default(LEAVE)
+  startDate     DateTime?          @map("start_date")
+  endDate       DateTime?          @map("end_date")
   reason        String
   attachmentUrl String?            @map("attachment_url")
   status        LeaveRequestStatus @default(PENDING)
   reviewedBy    String?            @map("reviewed_by")
   reviewedAt    DateTime?          @map("reviewed_at")
   reviewComment String?            @map("review_comment")
+  taskId        String?            @map("task_id")
+  taskResetAt   DateTime?          @map("task_reset_at")
   createdAt     DateTime           @default(now()) @map("created_at")
   updatedAt     DateTime           @updatedAt @map("updated_at")
 
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user     User   @relation("LeaveRequestUser", fields: [userId], references: [id], onDelete: Cascade)
   reviewer User?  @relation("LeaveRequestReviewer", fields: [reviewedBy], references: [id])
+  task     Task?  @relation(fields: [taskId], references: [id])
 
   @@map("leave_requests")
 }

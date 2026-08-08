@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, ProjectStatus } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { CreateProjectDto } from './dto/create-project.dto';
@@ -100,6 +100,78 @@ export class ProjectsService {
     if (requester) {
       await this.assertEmployeeCanAccessProject(id, requester);
     }
+    const stats = await this.getCompletionStats(id);
+    return { ...project, ...stats };
+  }
+
+  /** Phase 7.5 Đợt 1 mục B — % hoàn thành = (Task đã khoá completed_at) / (tổng Task) × 100. */
+  async getCompletionStats(projectId: string) {
+    const [totalTasks, completedTasks] = await Promise.all([
+      this.prisma.task.count({ where: { projectId } }),
+      this.prisma.task.count({ where: { projectId, completedAt: { not: null } } }),
+    ]);
+    return {
+      totalTasks,
+      completedTasks,
+      completionPercent: totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0,
+    };
+  }
+
+  /** Phase 7.5 Đợt 1 mục A — gọi sau mỗi lần 1 Task bị khoá (Manager "Xác nhận Done", xem
+   * TasksService.confirmDone). Chỉ tự chuyển COMPLETED khi project đang ACTIVE và có ít nhất 1
+   * Task (project 0 Task không tự hoàn thành). Không đụng CANCELLED/COMPLETED đã có sẵn. */
+  async maybeCompleteProject(projectId: string) {
+    const project = await this.prisma.project.findUnique({ where: { id: projectId } });
+    if (!project || project.status !== 'ACTIVE') return;
+    const { totalTasks, completedTasks } = await this.getCompletionStats(projectId);
+    if (totalTasks > 0 && totalTasks === completedTasks) {
+      await this.prisma.project.update({
+        where: { id: projectId },
+        data: { status: 'COMPLETED' },
+      });
+    }
+  }
+
+  /** Phase 7.5 Đợt 1 mục A — Manager huỷ 1 project đang chạy. */
+  async cancel(tenantId: string, id: string) {
+    const project = await this.assertProjectStatusIn(tenantId, id, ['ACTIVE']);
+    return this.prisma.project.update({
+      where: { id: project.id },
+      data: { status: 'CANCELLED' },
+    });
+  }
+
+  /** Phase 7.5 Đợt 1 mục A — chặn restart nếu Workflow gắn với project đã bị Admin vô hiệu hoá. */
+  async restart(tenantId: string, id: string) {
+    const project = await this.assertProjectStatusIn(tenantId, id, ['CANCELLED']);
+    const workflow = await this.prisma.workflow.findUniqueOrThrow({
+      where: { id: project.workflowId },
+    });
+    if (!workflow.isActive) {
+      throw new BadRequestException(
+        'Không thể khởi động lại Project vì Workflow đang gắn đã bị vô hiệu hoá',
+      );
+    }
+    return this.prisma.project.update({
+      where: { id: project.id },
+      data: { status: 'ACTIVE' },
+    });
+  }
+
+  private async assertProjectStatusIn(
+    tenantId: string,
+    id: string,
+    allowed: ProjectStatus[],
+  ) {
+    const project = await this.prisma.project.findFirst({ where: { id, tenantId } });
+    if (!project) {
+      throw new NotFoundException('Không tìm thấy Project');
+    }
+    if (!allowed.includes(project.status)) {
+      throw new BadRequestException(
+        `Project đang ở trạng thái ${project.status}, không thể thực hiện hành động này`,
+      );
+    }
     return project;
   }
 
@@ -184,6 +256,9 @@ export class ProjectsService {
     });
   }
 
+  /** Phase 7.5 Đợt 1 mục C — chỉ xoá được nếu chưa từng có Task nào ĐANG giao cho họ trong
+   * project này (kiểm tra tasks.assignee_id + project_id đúng theo phase_7_5.md, không tra
+   * task_history) — nếu có, chỉ cho phép tạm dừng (pauseMember), không xoá được. */
   async removeMember(tenantId: string, projectId: string, userId: string) {
     await this.findOne(tenantId, projectId);
     const member = await this.prisma.projectMember.findUnique({
@@ -192,7 +267,42 @@ export class ProjectsService {
     if (!member) {
       throw new NotFoundException('User chưa là thành viên của Project này');
     }
+    const assignedTaskCount = await this.prisma.task.count({
+      where: { projectId, assigneeId: userId },
+    });
+    if (assignedTaskCount > 0) {
+      throw new BadRequestException(
+        'User đang có Task được giao trong Project này — chỉ có thể tạm dừng, không xoá được',
+      );
+    }
     await this.prisma.projectMember.delete({ where: { id: member.id } });
     return { id: member.id };
+  }
+
+  async pauseMember(tenantId: string, projectId: string, userId: string) {
+    return this.setMemberStatus(tenantId, projectId, userId, 'PAUSED');
+  }
+
+  async resumeMember(tenantId: string, projectId: string, userId: string) {
+    return this.setMemberStatus(tenantId, projectId, userId, 'ACTIVE');
+  }
+
+  private async setMemberStatus(
+    tenantId: string,
+    projectId: string,
+    userId: string,
+    status: 'ACTIVE' | 'PAUSED',
+  ) {
+    await this.findOne(tenantId, projectId);
+    const member = await this.prisma.projectMember.findUnique({
+      where: { projectId_userId: { projectId, userId } },
+    });
+    if (!member) {
+      throw new NotFoundException('User chưa là thành viên của Project này');
+    }
+    return this.prisma.projectMember.update({
+      where: { id: member.id },
+      data: { status },
+    });
   }
 }

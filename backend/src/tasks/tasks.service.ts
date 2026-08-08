@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -182,6 +183,22 @@ export class TasksService {
     userId: string,
     dto: TransitionTaskDto,
   ) {
+    // Phase 7.5 Đợt 1 mục B — Task đã khoá (completed_at) thì KHÔNG được đi qua
+    // WorkflowEngineService nữa, chặn ngay tại đây (đúng "không cho qua WorkflowEngineService"
+    // trong phase_7_5.md — đây là ràng buộc Task-level, không phải logic Workflow Engine).
+    const task = await this.prisma.task.findFirst({
+      where: { id: taskId, tenantId },
+      select: { completedAt: true },
+    });
+    if (!task) {
+      throw new NotFoundException('Không tìm thấy Task');
+    }
+    if (task.completedAt) {
+      throw new BadRequestException(
+        'Task đã hoàn thành và bị khoá, không thể chuyển trạng thái',
+      );
+    }
+
     return this.workflowEngine.transition({
       tenantId,
       taskId,
@@ -190,5 +207,58 @@ export class TasksService {
       expectedVersion: dto.version,
       comment: dto.comment,
     });
+  }
+
+  /** Phase 7.5 Đợt 1 mục B — assignee bấm "Report Done" khi Task đang ở State is_end=true. KHÔNG
+   * phải transition Workflow Engine (Mục 3.1 CLAUDE.md — không hard-code state name), chỉ là 1
+   * cờ Task-level áp dụng cho BẤT KỲ State nào có is_end=true. */
+  async reportDone(tenantId: string, taskId: string, userId: string) {
+    const task = await this.prisma.task.findFirst({
+      where: { id: taskId, tenantId },
+      include: { currentState: { select: { isEnd: true } } },
+    });
+    if (!task) {
+      throw new NotFoundException('Không tìm thấy Task');
+    }
+    if (task.assigneeId !== userId) {
+      throw new ForbiddenException('Chỉ assignee của Task mới được Report Done');
+    }
+    if (task.completedAt) {
+      throw new BadRequestException('Task đã hoàn thành và bị khoá');
+    }
+    if (!task.currentState.isEnd) {
+      throw new BadRequestException(
+        'Task chưa ở trạng thái kết thúc (is_end), không thể Report Done',
+      );
+    }
+    if (task.pendingDoneConfirmation) {
+      throw new BadRequestException(
+        'Task đã được Report Done, đang chờ Manager xác nhận',
+      );
+    }
+    return this.prisma.task.update({
+      where: { id: taskId },
+      data: { pendingDoneConfirmation: true },
+    });
+  }
+
+  /** Phase 7.5 Đợt 1 mục B — Manager "Xác nhận Done": khoá Task vĩnh viễn (completedAt), sau đó
+   * kiểm tra xem Project có nên tự chuyển COMPLETED không (mục A). */
+  async confirmDone(tenantId: string, taskId: string) {
+    const task = await this.prisma.task.findFirst({ where: { id: taskId, tenantId } });
+    if (!task) {
+      throw new NotFoundException('Không tìm thấy Task');
+    }
+    if (!task.pendingDoneConfirmation) {
+      throw new BadRequestException(
+        'Task chưa được assignee Report Done, không thể xác nhận',
+      );
+    }
+    const updated = await this.prisma.task.update({
+      where: { id: taskId },
+      data: { completedAt: new Date(), pendingDoneConfirmation: false },
+    });
+    await this.projectsService.maybeCompleteProject(task.projectId);
+    return updated;
   }
 }

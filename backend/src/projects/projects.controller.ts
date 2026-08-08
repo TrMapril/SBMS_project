@@ -73,6 +73,18 @@ export class ProjectsController {
   }
 
   @Roles('MANAGER')
+  @Post(':id/cancel')
+  cancel(@CurrentTenant() tenantId: string, @Param('id') id: string) {
+    return this.projectsService.cancel(tenantId, id);
+  }
+
+  @Roles('MANAGER')
+  @Post(':id/restart')
+  restart(@CurrentTenant() tenantId: string, @Param('id') id: string) {
+    return this.projectsService.restart(tenantId, id);
+  }
+
+  @Roles('MANAGER')
   @Post(':id/members')
   addMember(
     @CurrentTenant() tenantId: string,
@@ -99,5 +111,25 @@ export class ProjectsController {
     @Param('userId') userId: string,
   ) {
     return this.projectsService.removeMember(tenantId, id, userId);
+  }
+
+  @Roles('MANAGER')
+  @Patch(':id/members/:userId/pause')
+  pauseMember(
+    @CurrentTenant() tenantId: string,
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+  ) {
+    return this.projectsService.pauseMember(tenantId, id, userId);
+  }
+
+  @Roles('MANAGER')
+  @Patch(':id/members/:userId/resume')
+  resumeMember(
+    @CurrentTenant() tenantId: string,
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+  ) {
+    return this.projectsService.resumeMember(tenantId, id, userId);
   }
 }

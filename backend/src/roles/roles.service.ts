@@ -18,7 +18,7 @@ export class RolesService {
   async create(tenantId: string, dto: CreateRoleDto) {
     try {
       return await this.prisma.role.create({
-        data: { tenantId, name: dto.name },
+        data: { tenantId, name: dto.name, description: dto.description },
       });
     } catch (error) {
       if (
