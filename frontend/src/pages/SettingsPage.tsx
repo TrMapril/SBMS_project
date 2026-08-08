@@ -90,9 +90,9 @@ function SettingsForm({ config }: { config: TenantConfig }) {
   }
 
   return (
-    <div className="max-w-xl">
-      <h1 className="mb-1 text-xl font-semibold text-gray-900">Cài đặt</h1>
-      <p className="mb-4 text-xs text-gray-400">
+    <div className="mx-auto max-w-2xl">
+      <h1 className="mb-1 text-xl font-semibold text-gray-900 text-center">Cài đặt</h1>
+      <p className="mb-4 text-center text-xs text-gray-400">
         Cấu hình chung của tenant — theme trang giới thiệu doanh nghiệp và các module tính năng.
       </p>
 

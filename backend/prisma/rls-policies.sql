@@ -449,3 +449,26 @@ CREATE POLICY employee_profiles_tenant_isolation ON employee_profiles
     current_setting('app.is_super_admin', true) = 'true'
     OR tenant_id = current_setting('app.current_tenant_id', true)
   );
+
+-- ============================================================================
+-- Phase 7.5 Đợt 1: chỉ thêm CỘT/ENUM trên các bảng đã có policy ở trên (leave_requests,
+-- project_members, projects, roles, tasks, tenant_config) — không có bảng mới, không cần policy
+-- riêng (RLS áp dụng theo hàng, không theo cột).
+--
+-- Phase 7.5 Đợt 2: request_type_templates ("loại đơn mẫu" do Admin tự định nghĩa)
+-- ============================================================================
+
+ALTER TABLE request_type_templates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE request_type_templates FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS request_type_templates_tenant_isolation ON request_type_templates;
+CREATE POLICY request_type_templates_tenant_isolation ON request_type_templates
+  FOR ALL
+  USING (
+    current_setting('app.is_super_admin', true) = 'true'
+    OR tenant_id = current_setting('app.current_tenant_id', true)
+  )
+  WITH CHECK (
+    current_setting('app.is_super_admin', true) = 'true'
+    OR tenant_id = current_setting('app.current_tenant_id', true)
+  );

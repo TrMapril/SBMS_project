@@ -1,10 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
 import { useUsers } from '../features/users/useUsers'
-import {
-  useCompetencyProfile,
-  useCreateCompetencyProfileEntry,
-} from '../features/personnel/useCompetencyProfiles'
 import {
   useCreatePersonnelProposal,
   usePersonnelProposals,
@@ -25,209 +20,10 @@ const PROPOSAL_STATUS_BADGE: Record<PersonnelProposalStatus, string> = {
   REJECTED: 'bg-red-100 text-red-700',
 }
 
-/** Nội bộ (chỉ Manager/Admin — @Roles ở ProtectedRoute cha), 2 module độc lập gộp 1 trang dạng
- * tab đúng cách plan.md gộp chung 1 bullet "Phạm vi": Hồ sơ năng lực (đánh giá định kỳ) và Đề
- * xuất nhân sự (propose → resolve). */
+/** Phase 7.5 Đợt 2 — trước đây trang này gộp 2 tab "Hồ sơ năng lực" + "Đề xuất nhân sự". Đã tách
+ * "Hồ sơ năng lực" ra `EmployeeCompetencyPage` (chỉ vào được qua "Xem chi tiết" ở trang User, bỏ
+ * khỏi sidebar) — trang này giờ chỉ còn "Đề xuất nhân sự" (Manager tạo, Admin phê duyệt). */
 export function PersonnelPage() {
-  const [tab, setTab] = useState<'competency' | 'proposals'>('competency')
-
-  return (
-    <div>
-      <h1 className="mb-4 text-xl font-semibold text-gray-900">Nhân sự</h1>
-      <div className="mb-4 flex gap-1 border-b border-gray-200">
-        <TabButton active={tab === 'competency'} onClick={() => setTab('competency')}>
-          Hồ sơ năng lực
-        </TabButton>
-        <TabButton active={tab === 'proposals'} onClick={() => setTab('proposals')}>
-          Đề xuất nhân sự
-        </TabButton>
-      </div>
-      {tab === 'competency' ? <CompetencyTab /> : <ProposalsTab />}
-    </div>
-  )
-}
-
-function TabButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean
-  onClick: () => void
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`border-b-2 px-4 py-2 text-sm font-medium ${
-        active
-          ? 'border-indigo-600 text-indigo-700'
-          : 'border-transparent text-gray-500 hover:text-gray-700'
-      }`}
-    >
-      {children}
-    </button>
-  )
-}
-
-function CompetencyTab() {
-  const { data: users } = useUsers()
-  const employees = (users?.data ?? []).filter((u) => u.systemRole === 'EMPLOYEE')
-  const [selectedUserId, setSelectedUserId] = useState('')
-  const { data: profile, isLoading, error } = useCompetencyProfile(selectedUserId || undefined)
-  const createEntry = useCreateCompetencyProfileEntry()
-  const [periodLabel, setPeriodLabel] = useState('')
-  const [overallRating, setOverallRating] = useState(3)
-  const [managerNotes, setManagerNotes] = useState('')
-
-  function handleSubmit(e: FormEvent) {
-    e.preventDefault()
-    if (!selectedUserId) return
-    createEntry.mutate(
-      { userId: selectedUserId, periodLabel, overallRating, managerNotes: managerNotes || undefined },
-      {
-        onSuccess: () => {
-          setPeriodLabel('')
-          setManagerNotes('')
-        },
-      },
-    )
-  }
-
-  return (
-    <div className="space-y-4">
-      <div>
-        <label className="mb-1 block text-sm font-medium text-gray-700">Chọn nhân viên</label>
-        <Select
-          value={selectedUserId}
-          onChange={(e) => setSelectedUserId(e.target.value)}
-          className="max-w-xs"
-        >
-          <option value="">-- Chọn --</option>
-          {employees.map((u) => (
-            <option key={u.id} value={u.id}>
-              {u.fullName}
-            </option>
-          ))}
-        </Select>
-      </div>
-
-      {selectedUserId && (
-        <>
-          {isLoading && <Spinner />}
-          {error && <ErrorBanner error={error} />}
-          {profile && (
-            <>
-              <div className="rounded-lg border border-gray-200 bg-white p-4">
-                <div className="mb-2 flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-gray-700">Chỉ số tự động</h3>
-                  <Link
-                    to={`/employees/${selectedUserId}`}
-                    className="text-xs text-indigo-600 hover:underline"
-                  >
-                    Xem hồ sơ công khai
-                  </Link>
-                </div>
-                <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-                  <Stat label="Task hoàn thành" value={profile.autoMetrics.totalCompletedTasks} />
-                  <Stat
-                    label="Tỷ lệ đúng hạn"
-                    value={
-                      profile.autoMetrics.onTimeRate != null
-                        ? `${(profile.autoMetrics.onTimeRate * 100).toFixed(0)}%`
-                        : '—'
-                    }
-                  />
-                  <Stat label="Số lần trả về" value={profile.autoMetrics.returnCount} />
-                  <Stat
-                    label="TB xử lý/bước"
-                    value={
-                      profile.autoMetrics.avgProcessingHours != null
-                        ? `${profile.autoMetrics.avgProcessingHours.toFixed(1)}h`
-                        : '—'
-                    }
-                  />
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-gray-200 bg-white p-4">
-                <h3 className="mb-2 text-sm font-semibold text-gray-700">Đánh giá định tính</h3>
-                <form onSubmit={handleSubmit} className="mb-4 space-y-2 border-b border-gray-100 pb-4">
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="Kỳ đánh giá (vd: 2026-Q3)"
-                      value={periodLabel}
-                      onChange={(e) => setPeriodLabel(e.target.value)}
-                      required
-                    />
-                    <Select
-                      value={overallRating}
-                      onChange={(e) => setOverallRating(Number(e.target.value))}
-                      className="w-24"
-                    >
-                      {[1, 2, 3, 4, 5].map((n) => (
-                        <option key={n} value={n}>
-                          {n} sao
-                        </option>
-                      ))}
-                    </Select>
-                  </div>
-                  <Textarea
-                    placeholder="Nhận xét nội bộ (chỉ Manager/Admin thấy)"
-                    value={managerNotes}
-                    onChange={(e) => setManagerNotes(e.target.value)}
-                    rows={2}
-                  />
-                  {createEntry.isError && <ErrorBanner error={createEntry.error} />}
-                  <Button type="submit" disabled={createEntry.isPending}>
-                    {createEntry.isPending ? 'Đang lưu...' : 'Thêm đánh giá'}
-                  </Button>
-                </form>
-
-                <div className="space-y-2">
-                  {profile.entries.length === 0 && (
-                    <p className="text-xs text-gray-400">Chưa có đánh giá nào.</p>
-                  )}
-                  {profile.entries.map((entry) => (
-                    <div key={entry.id} className="rounded border border-gray-100 p-2 text-sm">
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium text-gray-800">{entry.periodLabel}</span>
-                        <span className="text-xs text-yellow-600">
-                          {'★'.repeat(entry.overallRating)}
-                          {'☆'.repeat(5 - entry.overallRating)}
-                        </span>
-                      </div>
-                      {entry.managerNotes && (
-                        <p className="mt-1 text-gray-600">{entry.managerNotes}</p>
-                      )}
-                      <p className="mt-1 text-xs text-gray-400">
-                        Ghi bởi {entry.createdByUser?.fullName} ·{' '}
-                        {new Date(entry.createdAt).toLocaleDateString('vi-VN')}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
-        </>
-      )}
-    </div>
-  )
-}
-
-function Stat({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div>
-      <p className="text-xs text-gray-400">{label}</p>
-      <p className="text-base font-semibold text-gray-800">{value}</p>
-    </div>
-  )
-}
-
-const PROPOSAL_TYPES: PersonnelProposalType[] = ['PROMOTION', 'RAISE', 'WARNING', 'AWARD']
-
-function ProposalsTab() {
   const isAdmin = useAuthStore((s) => s.user?.systemRole === 'ADMIN')
   const [statusFilter, setStatusFilter] = useState<PersonnelProposalStatus | ''>('')
   const { data, isLoading, error } = usePersonnelProposals(statusFilter || undefined)
@@ -235,18 +31,24 @@ function ProposalsTab() {
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between">
-        <Select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as PersonnelProposalStatus | '')}
-          className="w-40"
-        >
-          <option value="">Tất cả</option>
-          <option value="PENDING">PENDING</option>
-          <option value="APPROVED">APPROVED</option>
-          <option value="REJECTED">REJECTED</option>
-        </Select>
+      <div className="mb-4 flex items-center justify-between">
+        <h1 className="text-xl font-semibold text-gray-900">Đề xuất nhân sự</h1>
         <Button onClick={() => setShowCreate(true)}>+ Đề xuất</Button>
+      </div>
+
+      <div className="mb-3 flex items-center gap-2">
+        <span className="text-sm text-gray-500">Lọc trạng thái:</span>
+        <div className="w-40 shrink-0">
+          <Select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as PersonnelProposalStatus | '')}
+          >
+            <option value="">Tất cả</option>
+            <option value="PENDING">PENDING</option>
+            <option value="APPROVED">APPROVED</option>
+            <option value="REJECTED">REJECTED</option>
+          </Select>
+        </div>
       </div>
 
       {error && <ErrorBanner error={error} />}
@@ -338,6 +140,8 @@ function CreateProposalModal({ onClose }: { onClose: () => void }) {
   const [type, setType] = useState<PersonnelProposalType>('PROMOTION')
   const [description, setDescription] = useState('')
   const createProposal = useCreatePersonnelProposal()
+
+  const PROPOSAL_TYPES: PersonnelProposalType[] = ['PROMOTION', 'RAISE', 'WARNING', 'AWARD']
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault()

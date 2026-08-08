@@ -8,6 +8,7 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { SupabaseStorageService } from '../common/storage/supabase-storage.service';
 import { assertValidUpload } from '../common/utils/file-validation.util';
 import { NotificationsService } from '../notifications/notifications.service';
+import { RequestTypesService } from '../request-types/request-types.service';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
 import { ResolveLeaveRequestDto } from './dto/resolve-leave-request.dto';
 import { ListLeaveRequestsQueryDto } from './dto/list-leave-requests-query.dto';
@@ -33,6 +34,7 @@ export class LeaveRequestsService {
     private readonly prisma: PrismaService,
     private readonly storage: SupabaseStorageService,
     private readonly notifications: NotificationsService,
+    private readonly requestTypes: RequestTypesService,
   ) {}
 
   async create(
@@ -45,6 +47,9 @@ export class LeaveRequestsService {
 
     if (type === 'TASK_RETURN') {
       return this.createTaskReturn(tenantId, userId, dto);
+    }
+    if (type === 'CUSTOM') {
+      return this.createCustom(tenantId, userId, dto);
     }
 
     if (!dto.startDate || !dto.endDate) {
@@ -117,18 +122,48 @@ export class LeaveRequestsService {
     });
   }
 
+  /** Phase 7.5 Đợt 2 — Employee/Admin gửi đơn theo 1 "loại đơn mẫu" do Admin tự định nghĩa. */
+  private async createCustom(
+    tenantId: string,
+    userId: string,
+    dto: CreateLeaveRequestDto,
+  ) {
+    if (!dto.requestTypeId) {
+      throw new BadRequestException('Đơn theo loại mẫu cần requestTypeId');
+    }
+    const template = await this.requestTypes.findOne(tenantId, dto.requestTypeId);
+    const fields = (template.fields as { key: string; label: string; required: boolean }[]) ?? [];
+    const customFieldValues = this.requestTypes.validateCustomFieldValues(
+      fields,
+      dto.customFieldValues,
+    );
+
+    return this.prisma.leaveRequest.create({
+      data: {
+        tenantId,
+        userId,
+        type: 'CUSTOM',
+        requestTypeId: template.id,
+        reason: dto.reason,
+        customFieldValues,
+      },
+    });
+  }
+
   async findAll(
     tenantId: string,
     requester: JwtPayload,
     query: ListLeaveRequestsQueryDto,
   ) {
     const { page, limit, status, type } = query;
-    const canReviewAll = requester.systemRole === 'MANAGER';
+    // Phase 7.5 Đợt 2 — Admin xem được TOÀN BỘ đơn (view-only, không duyệt được — resolve/reset
+    // vẫn chỉ Manager qua @Roles ở Controller). Manager giữ nguyên xem toàn bộ để duyệt.
+    const canViewAll = requester.systemRole === 'MANAGER' || requester.systemRole === 'ADMIN';
     const where = {
       tenantId,
       ...(status ? { status } : {}),
       ...(type ? { type } : {}),
-      ...(canReviewAll ? {} : { userId: requester.userId }),
+      ...(canViewAll ? {} : { userId: requester.userId }),
     };
 
     const [data, total] = await this.prisma.$transaction([
@@ -141,6 +176,7 @@ export class LeaveRequestsService {
           user: { select: { id: true, fullName: true, email: true } },
           reviewer: { select: { id: true, fullName: true } },
           task: { select: { id: true, title: true } },
+          requestType: { select: { id: true, name: true, fields: true } },
         },
       }),
       this.prisma.leaveRequest.count({ where }),
@@ -155,13 +191,14 @@ export class LeaveRequestsService {
         user: { select: { id: true, fullName: true, email: true } },
         reviewer: { select: { id: true, fullName: true } },
         task: { select: { id: true, title: true } },
+        requestType: { select: { id: true, name: true, fields: true } },
       },
     });
     if (!leaveRequest) {
       throw new NotFoundException('Không tìm thấy đơn từ');
     }
-    const canReviewAll = requester.systemRole === 'MANAGER';
-    if (!canReviewAll && leaveRequest.userId !== requester.userId) {
+    const canViewAll = requester.systemRole === 'MANAGER' || requester.systemRole === 'ADMIN';
+    if (!canViewAll && leaveRequest.userId !== requester.userId) {
       throw new ForbiddenException('Không có quyền xem đơn từ này');
     }
     return leaveRequest;

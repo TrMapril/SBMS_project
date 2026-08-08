@@ -56,6 +56,16 @@ export class RolesController {
     return this.rolesService.findMyRoles(tenantId, user.userId);
   }
 
+  // Phase 7.5 Đợt 2 — Admin tra Custom Role hiện tại của 1 user cụ thể (trang User, tính năng
+  // "Đổi Custom Role"). Đặt TRƯỚC @Get(':id') để Nest không khớp "by-user" vào tham số :id.
+  @Get('by-user/:userId')
+  findRolesForUser(
+    @CurrentTenant() tenantId: string,
+    @Param('userId') userId: string,
+  ) {
+    return this.rolesService.findRolesForUser(tenantId, userId);
+  }
+
   @Get(':id')
   findOne(@CurrentTenant() tenantId: string, @Param('id') id: string) {
     return this.rolesService.findOne(tenantId, id);

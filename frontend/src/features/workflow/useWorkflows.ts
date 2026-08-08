@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../../lib/api-client'
+import { toQuery } from '../../lib/query-string'
 import type {
   PaginatedResponse,
   TransitionCondition,
@@ -9,11 +10,14 @@ import type {
   WorkflowTemplate,
 } from '../../lib/types'
 
-export function useWorkflows() {
+/** Phase 7.5 Đợt 2 — trang Workflow đổi sang bảng có tìm kiếm + lọc theo is_active. */
+export function useWorkflows(params: { search?: string; isActive?: boolean } = {}) {
   return useQuery({
-    queryKey: ['workflows'],
+    queryKey: ['workflows', params],
     queryFn: () =>
-      apiClient.get<PaginatedResponse<Workflow>>('/workflows?limit=100'),
+      apiClient.get<PaginatedResponse<Workflow>>(
+        `/workflows?${toQuery({ search: params.search, isActive: params.isActive, limit: 100 })}`,
+      ),
   })
 }
 
@@ -30,6 +34,28 @@ export function useCreateWorkflow() {
   return useMutation({
     mutationFn: (name: string) =>
       apiClient.post<Workflow>('/workflows', { name }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['workflows'] })
+    },
+  })
+}
+
+/** Phase 7.5 Đợt 2 — Vô hiệu hoá / kích hoạt lại 1 Workflow từ trang danh sách dạng bảng. */
+export function useUpdateWorkflow() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
+      apiClient.patch<Workflow>(`/workflows/${id}`, { isActive }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['workflows'] })
+    },
+  })
+}
+
+export function useDeleteWorkflow() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/workflows/${id}`),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['workflows'] })
     },

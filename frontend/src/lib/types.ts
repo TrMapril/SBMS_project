@@ -2,6 +2,8 @@ export type SystemRole = 'SUPER_ADMIN' | 'ADMIN' | 'MANAGER' | 'EMPLOYEE'
 export type UserStatus = 'ACTIVE' | 'LOCKED' | 'PENDING'
 export type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
 export type CustomFieldType = 'TEXT' | 'NUMBER' | 'DATE' | 'BOOLEAN'
+export type ProjectStatus = 'ACTIVE' | 'COMPLETED' | 'CANCELLED'
+export type ProjectMemberStatus = 'ACTIVE' | 'PAUSED'
 
 export interface PaginatedResponse<T> {
   data: T[]
@@ -20,12 +22,16 @@ export interface User {
   mustChangePassword: boolean
   createdAt: string
   updatedAt: string
+  /** Chỉ có ý nghĩa với Employee — trả về rỗng với Admin/Manager (Phase 7.5 Đợt 2). */
+  customRoles?: Pick<Role, 'id' | 'name'>[]
 }
 
 export interface Role {
   id: string
   tenantId: string
   name: string
+  /** Phase 7.5 Đợt 1 mục E. */
+  description: string | null
   createdAt: string
   updatedAt: string
 }
@@ -49,6 +55,12 @@ export interface Workflow {
   isActive: boolean
   createdAt: string
   updatedAt: string
+  /** Phase 7.5 Đợt 2 — chỉ có ở response GET /workflows (danh sách dạng bảng), không có ở
+   * GET /workflows/:id (WorkflowDetail dùng states/transitions thật thay vì đếm). */
+  stateCount?: number
+  transitionCount?: number
+  totalProjectCount?: number
+  activeProjectCount?: number
 }
 
 export interface WorkflowState {
@@ -120,14 +132,24 @@ export interface Project {
   tenantId: string
   workflowId: string
   name: string
+  /** Phase 7.5 Đợt 1 mục A. */
+  status: ProjectStatus
   createdAt: string
   updatedAt: string
+  /** Phase 7.5 Đợt 2 — trả về ở cả GET /projects (danh sách) và GET /projects/:id. */
+  workflow?: Pick<Workflow, 'id' | 'name'>
+  memberCount?: number
+  totalTasks?: number
+  completedTasks?: number
+  completionPercent?: number
 }
 
 export interface ProjectMember {
   id: string
   projectId: string
   userId: string
+  /** Phase 7.5 Đợt 1 mục C — khác `users.status` (toàn hệ thống). */
+  status: ProjectMemberStatus
   createdAt: string
   user?: Pick<User, 'id' | 'email' | 'fullName' | 'systemRole' | 'status'>
 }
@@ -294,23 +316,48 @@ export interface PublicTenant {
 }
 
 export type LeaveRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
+/** Phase 7.5 Đợt 1 mục D thêm TASK_RETURN, Đợt 2 thêm CUSTOM (loại đơn mẫu do Admin định nghĩa). */
+export type RequestType = 'LEAVE' | 'TASK_RETURN' | 'CUSTOM'
+
+export interface RequestTypeField {
+  key: string
+  label: string
+  required: boolean
+}
+
+/** Phase 7.5 Đợt 2 — "loại đơn mẫu" do Admin tự định nghĩa. */
+export interface RequestTypeTemplate {
+  id: string
+  tenantId: string
+  name: string
+  fields: RequestTypeField[]
+  createdAt: string
+  updatedAt: string
+}
 
 export interface LeaveRequest {
   id: string
   tenantId: string
   userId: string
-  startDate: string
-  endDate: string
+  type: RequestType
+  startDate: string | null
+  endDate: string | null
   reason: string
   attachmentUrl: string | null
   status: LeaveRequestStatus
   reviewedBy: string | null
   reviewedAt: string | null
   reviewComment: string | null
+  taskId: string | null
+  taskResetAt: string | null
+  requestTypeId: string | null
+  customFieldValues: Record<string, string> | null
   createdAt: string
   updatedAt: string
   user?: Pick<User, 'id' | 'fullName' | 'email'>
   reviewer?: Pick<User, 'id' | 'fullName'> | null
+  task?: { id: string; title: string } | null
+  requestType?: Pick<RequestTypeTemplate, 'id' | 'name' | 'fields'> | null
 }
 
 export interface CompetencyAutoMetrics {
@@ -318,6 +365,9 @@ export interface CompetencyAutoMetrics {
   onTimeRate: number | null
   returnCount: number
   avgProcessingHours: number | null
+  /** Phase 7.5 Đợt 1 mục D — số lần đơn TASK_RETURN của user này bị Manager đánh giá "không phù
+   * hợp" (toàn thời gian). */
+  taskReturnRejectedCount: number
 }
 
 export interface CompetencyProfileEntry {

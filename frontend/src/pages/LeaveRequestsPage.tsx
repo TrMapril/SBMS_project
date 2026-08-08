@@ -4,8 +4,9 @@ import {
   useLeaveRequests,
   useResolveLeaveRequest,
 } from '../features/leave-requests/useLeaveRequests'
+import { useRequestTypeMutations, useRequestTypes } from '../features/request-types/useRequestTypes'
 import { useAuthStore } from '../store/auth.store'
-import type { LeaveRequestStatus } from '../lib/types'
+import type { LeaveRequest, LeaveRequestStatus, RequestType, RequestTypeField } from '../lib/types'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
 import { Select } from '../components/ui/Select'
@@ -19,12 +20,36 @@ const STATUS_BADGE: Record<LeaveRequestStatus, string> = {
   REJECTED: 'bg-red-100 text-red-700',
 }
 
+const TYPE_LABEL: Record<RequestType, string> = {
+  LEAVE: 'Nghỉ phép',
+  TASK_RETURN: 'Trả task',
+  CUSTOM: 'Loại mẫu',
+}
+
+/** Với TASK_RETURN, APPROVED/REJECTED mang ngữ nghĩa "lý do phù hợp"/"không phù hợp" (Phase 7.5
+ * Đợt 1 mục D — không thêm enum mới, chỉ đổi label hiển thị theo `type`). */
+function statusLabel(lr: Pick<LeaveRequest, 'type' | 'status'>): string {
+  if (lr.type === 'TASK_RETURN') {
+    if (lr.status === 'APPROVED') return 'Phù hợp'
+    if (lr.status === 'REJECTED') return 'Không phù hợp'
+  }
+  return lr.status
+}
+
 export function LeaveRequestsPage() {
   const user = useAuthStore((s) => s.user)
-  const canReview = user?.systemRole === 'MANAGER' || user?.systemRole === 'ADMIN'
+  // Phase 7.5 Đợt 2 — Quyết định nền tảng #2: CHỈ Manager duyệt được. Admin xem TOÀN BỘ đơn
+  // (view-only, không có nút duyệt) — khác Manager vừa xem toàn bộ vừa duyệt được.
+  const canResolve = user?.systemRole === 'MANAGER'
+  const canViewAll = user?.systemRole === 'MANAGER' || user?.systemRole === 'ADMIN'
   const [statusFilter, setStatusFilter] = useState<LeaveRequestStatus | ''>('')
-  const { data, isLoading, error } = useLeaveRequests(statusFilter || undefined)
+  const [typeFilter, setTypeFilter] = useState<RequestType | ''>('')
+  const { data, isLoading, error } = useLeaveRequests(
+    statusFilter || undefined,
+    typeFilter || undefined,
+  )
   const [showCreate, setShowCreate] = useState(false)
+  const [showCreateType, setShowCreateType] = useState(false)
 
   if (!user) return null
 
@@ -32,21 +57,40 @@ export function LeaveRequestsPage() {
     <div>
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-xl font-semibold text-gray-900">Đơn từ nội bộ</h1>
-        <Button onClick={() => setShowCreate(true)}>+ Gửi đơn</Button>
+        <div className="flex gap-2">
+          {user.systemRole === 'ADMIN' && (
+            <Button variant="secondary" onClick={() => setShowCreateType(true)}>
+              + Loại đơn mới
+            </Button>
+          )}
+          <Button onClick={() => setShowCreate(true)}>+ Gửi đơn</Button>
+        </div>
       </div>
 
       <div className="mb-3 flex items-center gap-2">
-        <span className="text-sm text-gray-500">Lọc trạng thái:</span>
-        <Select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as LeaveRequestStatus | '')}
-          className="w-40"
-        >
-          <option value="">Tất cả</option>
-          <option value="PENDING">PENDING</option>
-          <option value="APPROVED">APPROVED</option>
-          <option value="REJECTED">REJECTED</option>
-        </Select>
+        <span className="text-sm text-gray-500">Lọc:</span>
+        <div className="w-40 shrink-0">
+          <Select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as LeaveRequestStatus | '')}
+          >
+            <option value="">Mọi trạng thái</option>
+            <option value="PENDING">PENDING</option>
+            <option value="APPROVED">APPROVED</option>
+            <option value="REJECTED">REJECTED</option>
+          </Select>
+        </div>
+        <div className="w-40 shrink-0">
+          <Select
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value as RequestType | '')}
+          >
+            <option value="">Mọi loại đơn</option>
+            <option value="LEAVE">Nghỉ phép</option>
+            <option value="TASK_RETURN">Trả task</option>
+            <option value="CUSTOM">Loại mẫu</option>
+          </Select>
+        </div>
       </div>
 
       {error && <ErrorBanner error={error} />}
@@ -64,21 +108,42 @@ export function LeaveRequestsPage() {
             >
               <div className="mb-1 flex items-start justify-between gap-2">
                 <div>
-                  {canReview && lr.user && (
+                  {canViewAll && lr.user && (
                     <span className="font-medium text-gray-900">{lr.user.fullName} · </span>
                   )}
-                  <span className="text-gray-600">
-                    {new Date(lr.startDate).toLocaleDateString('vi-VN')} →{' '}
-                    {new Date(lr.endDate).toLocaleDateString('vi-VN')}
-                  </span>
+                  <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600">
+                    {TYPE_LABEL[lr.type]}
+                  </span>{' '}
+                  {lr.type === 'LEAVE' && lr.startDate && lr.endDate && (
+                    <span className="text-gray-600">
+                      {new Date(lr.startDate).toLocaleDateString('vi-VN')} →{' '}
+                      {new Date(lr.endDate).toLocaleDateString('vi-VN')}
+                    </span>
+                  )}
+                  {lr.type === 'TASK_RETURN' && lr.task && (
+                    <span className="text-gray-600">Task: {lr.task.title}</span>
+                  )}
+                  {lr.type === 'CUSTOM' && lr.requestType && (
+                    <span className="text-gray-600">{lr.requestType.name}</span>
+                  )}
                 </div>
                 <span
                   className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[lr.status]}`}
                 >
-                  {lr.status}
+                  {statusLabel(lr)}
                 </span>
               </div>
               <p className="text-gray-700">{lr.reason}</p>
+              {lr.type === 'CUSTOM' && lr.requestType && lr.customFieldValues && (
+                <dl className="mt-2 space-y-0.5 text-xs text-gray-500">
+                  {lr.requestType.fields.map((f) => (
+                    <div key={f.key}>
+                      <dt className="inline font-medium text-gray-600">{f.label}: </dt>
+                      <dd className="inline">{lr.customFieldValues?.[f.key] ?? '—'}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
               {lr.attachmentUrl && (
                 <a
                   href={lr.attachmentUrl}
@@ -96,8 +161,8 @@ export function LeaveRequestsPage() {
                 </p>
               )}
 
-              {canReview && lr.status === 'PENDING' && (
-                <ResolveActions leaveRequestId={lr.id} />
+              {canResolve && lr.status === 'PENDING' && (
+                <ResolveActions leaveRequestId={lr.id} type={lr.type} />
               )}
             </div>
           ))}
@@ -105,13 +170,22 @@ export function LeaveRequestsPage() {
       )}
 
       {showCreate && <CreateLeaveRequestModal onClose={() => setShowCreate(false)} />}
+      {showCreateType && <CreateRequestTypeModal onClose={() => setShowCreateType(false)} />}
     </div>
   )
 }
 
-function ResolveActions({ leaveRequestId }: { leaveRequestId: string }) {
+function ResolveActions({
+  leaveRequestId,
+  type,
+}: {
+  leaveRequestId: string
+  type: RequestType
+}) {
   const resolve = useResolveLeaveRequest()
   const [comment, setComment] = useState('')
+  const approveLabel = type === 'TASK_RETURN' ? 'Phù hợp' : 'Duyệt'
+  const rejectLabel = type === 'TASK_RETURN' ? 'Không phù hợp' : 'Từ chối'
 
   return (
     <div className="mt-3 space-y-2 border-t border-gray-100 pt-3">
@@ -129,7 +203,7 @@ function ResolveActions({ leaveRequestId }: { leaveRequestId: string }) {
             resolve.mutate({ id: leaveRequestId, status: 'APPROVED', comment: comment || undefined })
           }
         >
-          Duyệt
+          {approveLabel}
         </Button>
         <Button
           variant="danger"
@@ -139,7 +213,7 @@ function ResolveActions({ leaveRequestId }: { leaveRequestId: string }) {
             resolve.mutate({ id: leaveRequestId, status: 'REJECTED', comment: comment || undefined })
           }
         >
-          Từ chối
+          {rejectLabel}
         </Button>
       </div>
     </div>
@@ -147,48 +221,97 @@ function ResolveActions({ leaveRequestId }: { leaveRequestId: string }) {
 }
 
 function CreateLeaveRequestModal({ onClose }: { onClose: () => void }) {
+  const { data: requestTypes } = useRequestTypes()
+  // requestTypeId rỗng = đang gửi đơn "Xin nghỉ phép" (LEAVE), khác rỗng = đang gửi theo 1 loại
+  // đơn mẫu (CUSTOM) — dùng chính giá trị này làm value của <Select>, không cần state `type`
+  // riêng dễ lệch nhau.
+  const [requestTypeId, setRequestTypeId] = useState('')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [reason, setReason] = useState('')
   const [file, setFile] = useState<File | undefined>()
+  const [customValues, setCustomValues] = useState<Record<string, string>>({})
   const createLeaveRequest = useCreateLeaveRequest()
+
+  const selectedTemplate = requestTypes?.find((t) => t.id === requestTypeId)
+  const isCustom = requestTypeId !== ''
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    createLeaveRequest.mutate(
-      { startDate, endDate, reason, file },
-      { onSuccess: onClose },
-    )
+    if (!isCustom) {
+      createLeaveRequest.mutate(
+        { type: 'LEAVE', startDate, endDate, reason, file },
+        { onSuccess: onClose },
+      )
+    } else {
+      createLeaveRequest.mutate(
+        { type: 'CUSTOM', requestTypeId, reason, customFieldValues: customValues, file },
+        { onSuccess: onClose },
+      )
+    }
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-lg">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-gray-900">Gửi đơn nghỉ phép</h2>
+          <h2 className="text-base font-semibold text-gray-900">Gửi đơn</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600" aria-label="Đóng">
             ✕
           </button>
         </div>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">Từ ngày</label>
-            <Input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              required
-            />
+            <label className="mb-1 block text-sm font-medium text-gray-700">Loại đơn</label>
+            <Select value={requestTypeId} onChange={(e) => setRequestTypeId(e.target.value)}>
+              <option value="">Xin nghỉ phép</option>
+              {requestTypes?.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </Select>
           </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">Đến ngày</label>
-            <Input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              required
-            />
-          </div>
+
+          {!isCustom ? (
+            <>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Từ ngày</label>
+                <Input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Đến ngày</label>
+                <Input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  required
+                />
+              </div>
+            </>
+          ) : (
+            selectedTemplate?.fields.map((f) => (
+              <div key={f.key}>
+                <label className="mb-1 block text-sm font-medium text-gray-700">
+                  {f.label}
+                  {f.required && <span className="text-red-500"> *</span>}
+                </label>
+                <Input
+                  value={customValues[f.key] ?? ''}
+                  onChange={(e) =>
+                    setCustomValues((prev) => ({ ...prev, [f.key]: e.target.value }))
+                  }
+                  required={f.required}
+                />
+              </div>
+            ))
+          )}
+
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">Lý do</label>
             <Textarea
@@ -214,6 +337,100 @@ function CreateLeaveRequestModal({ onClose }: { onClose: () => void }) {
 
           <Button type="submit" className="w-full" disabled={createLeaveRequest.isPending}>
             {createLeaveRequest.isPending ? 'Đang gửi...' : 'Gửi đơn'}
+          </Button>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function CreateRequestTypeModal({ onClose }: { onClose: () => void }) {
+  const [name, setName] = useState('')
+  const [fields, setFields] = useState<RequestTypeField[]>([
+    { key: '', label: '', required: true },
+  ])
+  const { createRequestType } = useRequestTypeMutations()
+
+  function updateField(index: number, patch: Partial<RequestTypeField>) {
+    setFields((prev) => prev.map((f, i) => (i === index ? { ...f, ...patch } : f)))
+  }
+
+  function addField() {
+    setFields((prev) => [...prev, { key: '', label: '', required: true }])
+  }
+
+  function removeField(index: number) {
+    setFields((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    const cleaned = fields
+      .filter((f) => f.label.trim())
+      .map((f) => ({
+        ...f,
+        key: f.key.trim() || f.label.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_'),
+      }))
+    createRequestType.mutate({ name, fields: cleaned }, { onSuccess: onClose })
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-lg">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-base font-semibold text-gray-900">Tạo loại đơn mới</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600" aria-label="Đóng">
+            ✕
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700">Tên loại đơn</label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700">
+              Các trường cần điền
+            </label>
+            <div className="space-y-2">
+              {fields.map((f, index) => (
+                <div key={index} className="flex items-center gap-2">
+                  <Input
+                    placeholder="Tên trường (vd: Nơi công tác)"
+                    value={f.label}
+                    onChange={(e) => updateField(index, { label: e.target.value })}
+                    className="flex-1"
+                  />
+                  <label className="flex items-center gap-1 text-xs text-gray-500">
+                    <input
+                      type="checkbox"
+                      checked={f.required}
+                      onChange={(e) => updateField(index, { required: e.target.checked })}
+                    />
+                    Bắt buộc
+                  </label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="px-2 py-1 text-xs"
+                    disabled={fields.length === 1}
+                    onClick={() => removeField(index)}
+                  >
+                    Xoá
+                  </Button>
+                </div>
+              ))}
+            </div>
+            <Button type="button" variant="secondary" className="mt-2" onClick={addField}>
+              + Thêm trường
+            </Button>
+          </div>
+
+          {createRequestType.isError && <ErrorBanner error={createRequestType.error} />}
+
+          <Button type="submit" className="w-full" disabled={createRequestType.isPending}>
+            {createRequestType.isPending ? 'Đang tạo...' : 'Tạo loại đơn'}
           </Button>
         </form>
       </div>

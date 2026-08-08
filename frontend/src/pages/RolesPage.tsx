@@ -1,9 +1,8 @@
 import { useState, type FormEvent } from 'react'
 import { useRole, useRoleMutations, useRoles } from '../features/roles/useRoles'
-import { useUsers } from '../features/users/useUsers'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
-import { Select } from '../components/ui/Select'
+import { Textarea } from '../components/ui/Textarea'
 import { Modal } from '../components/ui/Modal'
 import { ErrorBanner } from '../components/ui/ErrorBanner'
 import { Spinner } from '../components/ui/Spinner'
@@ -20,7 +19,8 @@ export function RolesPage() {
           <h1 className="text-xl font-semibold text-gray-900">Custom Role</h1>
           <p className="text-xs text-gray-400">
             Dùng để đối chiếu quyền chuyển trạng thái Task (allow_roles) — khác với vai trò hệ
-            thống (Admin/Manager/Employee).
+            thống (Admin/Manager/Employee). Việc gán Custom Role cho từng Employee thực hiện ở
+            trang Người dùng ("Đổi Custom Role" hoặc lúc tạo hàng loạt).
           </p>
         </div>
         <Button onClick={() => setShowCreate(true)}>+ Custom Role</Button>
@@ -55,7 +55,11 @@ export function RolesPage() {
 
           <div className="flex-1 rounded-lg border border-gray-200 bg-white p-4">
             {selectedId ? (
-              <RoleDetailPanel roleId={selectedId} onDeleted={() => setSelectedId(null)} />
+              <RoleDetailPanel
+                key={selectedId}
+                roleId={selectedId}
+                onDeleted={() => setSelectedId(null)}
+              />
             ) : (
               <p className="text-sm text-gray-400">Chọn 1 Custom Role để xem chi tiết.</p>
             )}
@@ -70,11 +74,12 @@ export function RolesPage() {
 
 function CreateRoleModal({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
   const { createRole } = useRoleMutations()
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    createRole.mutate(name, { onSuccess: onClose })
+    createRole.mutate({ name, description: description || undefined }, { onSuccess: onClose })
   }
 
   return (
@@ -83,6 +88,10 @@ function CreateRoleModal({ onClose }: { onClose: () => void }) {
         <div>
           <label className="mb-1 block text-sm font-medium text-gray-700">Tên</label>
           <Input value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
+        </div>
+        <div>
+          <label className="mb-1 block text-sm font-medium text-gray-700">Mô tả (tuỳ chọn)</label>
+          <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
         </div>
         {createRole.isError && <ErrorBanner error={createRole.error} />}
         <Button type="submit" className="w-full" disabled={createRole.isPending}>
@@ -101,93 +110,65 @@ function RoleDetailPanel({
   onDeleted: () => void
 }) {
   const { data: role, isLoading, error } = useRole(roleId)
-  const { data: users } = useUsers()
-  const { renameRole, removeRole, assignUser, unassignUser } = useRoleMutations()
-  const [name, setName] = useState('')
-  const [selectedUserId, setSelectedUserId] = useState('')
+  const { updateRole, removeRole } = useRoleMutations()
+  const [name, setName] = useState(role?.name ?? '')
+  const [description, setDescription] = useState(role?.description ?? '')
 
   if (isLoading) return <Spinner />
   if (error) return <ErrorBanner error={error} />
   if (!role) return null
 
-  const assignedIds = new Set(role.userRoles.map((ur) => ur.userId))
-  const availableUsers = users?.data.filter((u) => !assignedIds.has(u.id)) ?? []
-
-  function handleRename(e: FormEvent) {
+  function handleSave(e: FormEvent) {
     e.preventDefault()
-    renameRole.mutate({ id: role!.id, name: name || role!.name })
-  }
-
-  function handleAssign(e: FormEvent) {
-    e.preventDefault()
-    if (!selectedUserId) return
-    assignUser.mutate(
-      { roleId: role!.id, userId: selectedUserId },
-      { onSuccess: () => setSelectedUserId('') },
-    )
+    updateRole.mutate({
+      id: role!.id,
+      name: name || role!.name,
+      description: description || undefined,
+    })
   }
 
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="mb-2 text-sm font-semibold text-gray-700">Đổi tên</h2>
-        <form onSubmit={handleRename} className="flex gap-2">
+        <h2 className="mb-2 text-sm font-semibold text-gray-700">Sửa thông tin</h2>
+        <form onSubmit={handleSave} className="space-y-2">
           <Input
             defaultValue={role.name}
             onChange={(e) => setName(e.target.value)}
-            className="max-w-xs"
+            placeholder="Tên"
           />
-          <Button type="submit" variant="secondary" disabled={renameRole.isPending}>
+          <Textarea
+            defaultValue={role.description ?? ''}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Mô tả (tuỳ chọn)"
+            rows={2}
+          />
+          <Button type="submit" variant="secondary" disabled={updateRole.isPending}>
             Lưu
           </Button>
         </form>
-        {renameRole.isError && <ErrorBanner error={renameRole.error} />}
+        {updateRole.isError && <ErrorBanner error={updateRole.error} />}
       </div>
 
       <div>
         <h2 className="mb-2 text-sm font-semibold text-gray-700">
-          Thành viên ({role.userRoles.length})
+          Thành viên đang gán ({role.userRoles.length})
         </h2>
-        <ul className="mb-3 divide-y divide-gray-100 rounded-md border border-gray-100">
+        <p className="mb-2 text-xs text-gray-400">
+          Chỉ xem — gán/bỏ gán Custom Role cho Employee thực hiện ở trang Người dùng.
+        </p>
+        <ul className="divide-y divide-gray-100 rounded-md border border-gray-100">
           {role.userRoles.map((ur) => (
-            <li key={ur.id} className="flex items-center justify-between px-3 py-2 text-sm">
+            <li key={ur.id} className="px-3 py-2 text-sm">
               <span className="text-gray-800">
                 {ur.user.fullName} <span className="text-gray-400">({ur.user.email})</span>
               </span>
-              <Button
-                variant="danger"
-                className="px-2 py-1 text-xs"
-                disabled={unassignUser.isPending}
-                onClick={() => unassignUser.mutate({ roleId: role.id, userId: ur.userId })}
-              >
-                Bỏ gán
-              </Button>
             </li>
           ))}
           {role.userRoles.length === 0 && (
             <li className="px-3 py-2 text-sm text-gray-400">Chưa gán cho user nào.</li>
           )}
         </ul>
-        {unassignUser.isError && <ErrorBanner error={unassignUser.error} />}
-
-        <form onSubmit={handleAssign} className="flex gap-2">
-          <Select
-            value={selectedUserId}
-            onChange={(e) => setSelectedUserId(e.target.value)}
-            className="max-w-xs"
-          >
-            <option value="">-- Chọn user để gán --</option>
-            {availableUsers.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.fullName} ({u.email})
-              </option>
-            ))}
-          </Select>
-          <Button type="submit" disabled={!selectedUserId || assignUser.isPending}>
-            Gán
-          </Button>
-        </form>
-        {assignUser.isError && <ErrorBanner error={assignUser.error} />}
       </div>
 
       <div className="border-t border-gray-100 pt-4">

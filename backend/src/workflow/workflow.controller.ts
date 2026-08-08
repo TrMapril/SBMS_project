@@ -17,7 +17,7 @@ import { CreateWorkflowStateDto } from './dto/create-workflow-state.dto';
 import { UpdateWorkflowStateDto } from './dto/update-workflow-state.dto';
 import { CreateWorkflowTransitionDto } from './dto/create-workflow-transition.dto';
 import { UpdateWorkflowTransitionDto } from './dto/update-workflow-transition.dto';
-import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { ListWorkflowsQueryDto } from './dto/list-workflows-query.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -46,9 +46,9 @@ export class WorkflowController {
   @Get()
   findAllWorkflows(
     @CurrentTenant() tenantId: string,
-    @Query() pagination: PaginationQueryDto,
+    @Query() query: ListWorkflowsQueryDto,
   ) {
-    return this.workflowService.findAllWorkflows(tenantId, pagination);
+    return this.workflowService.findAllWorkflows(tenantId, query);
   }
 
   @Get(':id')

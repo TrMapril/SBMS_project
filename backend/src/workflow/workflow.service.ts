@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
-import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { ListWorkflowsQueryDto } from './dto/list-workflows-query.dto';
 import { CreateWorkflowDto } from './dto/create-workflow.dto';
 import { UpdateWorkflowDto } from './dto/update-workflow.dto';
 import { CreateWorkflowStateDto } from './dto/create-workflow-state.dto';
@@ -29,17 +29,46 @@ export class WorkflowService {
     });
   }
 
-  async findAllWorkflows(tenantId: string, pagination: PaginationQueryDto) {
-    const { page, limit } = pagination;
-    const [data, total] = await this.prisma.$transaction([
+  /** Phase 7.5 Đợt 2 — Trang Workflow đổi sang dạng bảng, cần thêm số State/Transition/Project
+   * đang dùng (status=ACTIVE)/tổng Project từng dùng (mọi status) cho từng Workflow, cộng tìm
+   * kiếm theo tên + lọc theo is_active. */
+  async findAllWorkflows(tenantId: string, query: ListWorkflowsQueryDto) {
+    const { page, limit, search, isActive } = query;
+    const where = {
+      tenantId,
+      ...(search ? { name: { contains: search, mode: 'insensitive' as const } } : {}),
+      ...(isActive !== undefined ? { isActive } : {}),
+    };
+
+    const [workflows, total] = await this.prisma.$transaction([
       this.prisma.workflow.findMany({
-        where: { tenantId },
+        where,
         skip: (page - 1) * limit,
         take: limit,
         orderBy: { createdAt: 'desc' },
+        include: {
+          _count: { select: { states: true, transitions: true, projects: true } },
+        },
       }),
-      this.prisma.workflow.count({ where: { tenantId } }),
+      this.prisma.workflow.count({ where }),
     ]);
+
+    const activeProjectCounts = await this.prisma.project.groupBy({
+      by: ['workflowId'],
+      where: { workflowId: { in: workflows.map((w) => w.id) }, status: 'ACTIVE' },
+      _count: { _all: true },
+    });
+    const activeByWorkflow = new Map(
+      activeProjectCounts.map((c) => [c.workflowId, c._count._all]),
+    );
+
+    const data = workflows.map(({ _count, ...w }) => ({
+      ...w,
+      stateCount: _count.states,
+      transitionCount: _count.transitions,
+      totalProjectCount: _count.projects,
+      activeProjectCount: activeByWorkflow.get(w.id) ?? 0,
+    }));
     return { data, total, page, limit };
   }
 

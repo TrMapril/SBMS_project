@@ -149,23 +149,28 @@ function EditProfileForm({
                 placeholder="Tên bằng cấp"
                 value={c.name}
                 onChange={(e) => updateCert(i, { name: e.target.value })}
-                className="flex-1"
+                className="min-w-0 flex-1"
               />
-              <Input
-                placeholder="Nơi cấp"
-                value={c.issuer ?? ''}
-                onChange={(e) => updateCert(i, { issuer: e.target.value })}
-                className="w-32"
-              />
-              <Input
-                placeholder="Năm"
-                type="number"
-                value={c.year ?? ''}
-                onChange={(e) =>
-                  updateCert(i, { year: e.target.value ? Number(e.target.value) : undefined })
-                }
-                className="w-20"
-              />
+              {/* Input tự có sẵn w-full trong style gốc — set width cố định thẳng vào Input sẽ bị
+                  w-full thắng (Tailwind cascade theo thứ tự sinh CSS, không theo thứ tự class
+                  trong markup), nên bọc trong <div> kích thước cố định thay vì set trực tiếp. */}
+              <div className="w-32 shrink-0">
+                <Input
+                  placeholder="Nơi cấp"
+                  value={c.issuer ?? ''}
+                  onChange={(e) => updateCert(i, { issuer: e.target.value })}
+                />
+              </div>
+              <div className="w-20 shrink-0">
+                <Input
+                  placeholder="Năm"
+                  type="number"
+                  value={c.year ?? ''}
+                  onChange={(e) =>
+                    updateCert(i, { year: e.target.value ? Number(e.target.value) : undefined })
+                  }
+                />
+              </div>
               <button
                 type="button"
                 onClick={() => setCertifications((prev) => prev.filter((_, idx) => idx !== i))}

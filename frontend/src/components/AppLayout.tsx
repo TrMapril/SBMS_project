@@ -9,17 +9,24 @@ interface NavItem {
   roles: SystemRole[]
 }
 
+// Phase 7.5 Đợt 2:
+// - Gộp "Trang chủ" + "Dashboard" thành 1 mục (HomePage.tsx tự hiện thêm phần cảnh báo/bottleneck
+//   nếu là Admin/Manager) — bỏ mục "Dashboard" riêng.
+// - Thêm "Quản lý dự án" (read-only) cho Admin, tách khỏi "Dự án" của Manager/Employee.
+// - Đổi "Nhân sự" -> "Đề xuất nhân sự" vì đã tách "Hồ sơ năng lực" ra khỏi trang này — Hồ sơ năng
+//   lực của 1 Employee giờ CHỈ vào được qua nút "Xem chi tiết" ở trang Người dùng, không còn mục
+//   sidebar riêng để browse tự do.
 const NAV_ITEMS: NavItem[] = [
   { to: '/', label: 'Trang chủ', roles: ['ADMIN', 'MANAGER', 'EMPLOYEE'] },
-  { to: '/dashboard', label: 'Dashboard', roles: ['ADMIN', 'MANAGER'] },
   { to: '/workflows', label: 'Workflow', roles: ['ADMIN'] },
   { to: '/users', label: 'Người dùng', roles: ['ADMIN'] },
   { to: '/roles', label: 'Custom Role', roles: ['ADMIN'] },
   { to: '/custom-fields', label: 'Custom Fields', roles: ['ADMIN'] },
+  { to: '/admin/projects', label: 'Quản lý dự án', roles: ['ADMIN'] },
   { to: '/settings', label: 'Cài đặt', roles: ['ADMIN'] },
   { to: '/projects', label: 'Dự án', roles: ['MANAGER', 'EMPLOYEE'] },
   { to: '/leave-requests', label: 'Đơn từ', roles: ['ADMIN', 'MANAGER', 'EMPLOYEE'] },
-  { to: '/personnel', label: 'Nhân sự', roles: ['ADMIN', 'MANAGER'] },
+  { to: '/personnel', label: 'Đề xuất nhân sự', roles: ['ADMIN', 'MANAGER'] },
   { to: '/my-profile', label: 'Hồ sơ của tôi', roles: ['ADMIN', 'MANAGER', 'EMPLOYEE'] },
 ]
 

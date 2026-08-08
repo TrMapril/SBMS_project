@@ -12,7 +12,8 @@ import {
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
-import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { ListUsersQueryDto } from './dto/list-users-query.dto';
+import { BulkCreateUsersDto } from './dto/bulk-create-users.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -34,12 +35,19 @@ export class UsersController {
     return this.usersService.create(tenantId, dto);
   }
 
+  // Đặt TRƯỚC @Post()/@Get(':id') để Nest không khớp nhầm route.
+  @Roles('ADMIN')
+  @Post('bulk')
+  createBulk(@CurrentTenant() tenantId: string, @Body() dto: BulkCreateUsersDto) {
+    return this.usersService.createBulk(tenantId, dto);
+  }
+
   @Get()
   findAll(
     @CurrentTenant() tenantId: string,
-    @Query() pagination: PaginationQueryDto,
+    @Query() query: ListUsersQueryDto,
   ) {
-    return this.usersService.findAll(tenantId, pagination);
+    return this.usersService.findAll(tenantId, query);
   }
 
   @Get(':id')

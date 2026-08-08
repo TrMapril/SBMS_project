@@ -91,9 +91,12 @@ enum ProjectMemberStatus {
 /// Phase 7.5 Đợt 1 mục D — mở rộng `leave_requests` (Giai đoạn 7) thành khái niệm "đơn từ" chung
 /// hơn, giữ nguyên tên bảng cũ (chỉ thêm cột) theo đúng lựa chọn đơn giản nhất phase_7_5.md cho
 /// phép, tránh phải xin xác nhận đổi tên bảng.
+/// Phase 7.5 Đợt 2 — thêm `CUSTOM` cho "loại đơn mẫu" do Admin tự định nghĩa (xem
+/// `RequestTypeTemplate` bên dưới).
 enum RequestType {
   LEAVE
   TASK_RETURN
+  CUSTOM
 
   @@map("request_type")
 }
@@ -105,19 +108,20 @@ model Tenant {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  config              TenantConfig?
-  users               User[]
-  roles               Role[]
-  workflows           Workflow[]
-  tasks               Task[]
-  projects            Project[]
-  customFields        CustomField[]
-  bottleneckSnapshots BottleneckSnapshot[]
-  notifications       Notification[]
-  leaveRequests       LeaveRequest[]
-  competencyProfiles  CompetencyProfile[]
-  personnelProposals  PersonnelProposal[]
-  employeeProfiles    EmployeeProfile[]
+  config               TenantConfig?
+  users                User[]
+  roles                Role[]
+  workflows            Workflow[]
+  tasks                Task[]
+  projects             Project[]
+  customFields         CustomField[]
+  bottleneckSnapshots  BottleneckSnapshot[]
+  notifications        Notification[]
+  leaveRequests        LeaveRequest[]
+  competencyProfiles   CompetencyProfile[]
+  personnelProposals   PersonnelProposal[]
+  employeeProfiles     EmployeeProfile[]
+  requestTypeTemplates RequestTypeTemplate[]
 
   @@map("tenants")
 }
@@ -503,12 +507,41 @@ model LeaveRequest {
   createdAt     DateTime           @default(now()) @map("created_at")
   updatedAt     DateTime           @updatedAt @map("updated_at")
 
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user     User   @relation("LeaveRequestUser", fields: [userId], references: [id], onDelete: Cascade)
-  reviewer User?  @relation("LeaveRequestReviewer", fields: [reviewedBy], references: [id])
-  task     Task?  @relation(fields: [taskId], references: [id])
+  /// Phase 7.5 Đợt 2 — chỉ có giá trị khi `type = CUSTOM`, trỏ tới "loại đơn mẫu" do Admin tự định
+  /// nghĩa (xem `RequestTypeTemplate`). `customFieldValues` lưu map { fieldKey: giá trị dạng text
+  /// } khớp với `RequestTypeTemplate.fields` — validate presence các field `required` ở tầng
+  /// Service (Mục 3.5/3.6 CLAUDE.md: không xây rule engine, không ép kiểu dữ liệu từng field).
+  requestTypeId     String? @map("request_type_id")
+  customFieldValues Json?   @map("custom_field_values")
+
+  tenant      Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user        User                 @relation("LeaveRequestUser", fields: [userId], references: [id], onDelete: Cascade)
+  reviewer    User?                @relation("LeaveRequestReviewer", fields: [reviewedBy], references: [id])
+  task        Task?                @relation(fields: [taskId], references: [id])
+  requestType RequestTypeTemplate? @relation(fields: [requestTypeId], references: [id])
 
   @@map("leave_requests")
+}
+
+/// Phase 7.5 Đợt 2 — "loại đơn mẫu" do Admin tự định nghĩa (vd: "Đơn xin công tác", "Đơn xin hỗ
+/// trợ thiết bị"), mỗi loại có 1 danh sách trường tự do cần điền. Chỉ hỗ trợ trường dạng text tự
+/// do (không phân biệt TEXT/NUMBER/DATE/BOOLEAN như `custom_fields` của Task) — đơn giản nhất theo
+/// Mục 3.5/3.6 CLAUDE.md, tránh xây thêm 1 rule engine kiểu dữ liệu thứ 2 trong hệ thống.
+model RequestTypeTemplate {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  name      String
+  /// Mảng JSON { key, label, required } — key dùng làm khoá trong
+  /// `leave_requests.custom_field_values` khi Employee/Admin gửi đơn theo loại này.
+  fields    Json     @default("[]")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  leaveRequests LeaveRequest[]
+
+  @@unique([tenantId, name])
+  @@map("request_type_templates")
 }
 
 /// Giai đoạn 7 — hồ sơ năng lực NỘI BỘ, chỉ Manager/Admin xem (Mục 4.3 tài liệu phân tích thiết

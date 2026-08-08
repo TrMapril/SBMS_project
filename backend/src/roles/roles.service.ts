@@ -47,6 +47,12 @@ export class RolesService {
 
   /** Custom Role của chính user gọi — dùng để FE tự xét ẩn/hiện nút Transition theo quyền. */
   async findMyRoles(tenantId: string, userId: string) {
+    return this.findRolesForUser(tenantId, userId);
+  }
+
+  /** Phase 7.5 Đợt 2 — Admin xem Custom Role hiện tại của 1 Employee bất kỳ (tính năng "Đổi
+   * Custom Role" ở trang User) — khác `findMyRoles` vốn chỉ trả về của chính user gọi. */
+  async findRolesForUser(tenantId: string, userId: string) {
     const userRoles = await this.prisma.userRole.findMany({
       where: { userId, role: { tenantId } },
       include: { role: true },

@@ -55,17 +55,43 @@ export class ProjectsService {
     });
   }
 
+  /** Phase 7.5 Đợt 2 — trang Quản lý dự án Admin (read-only) cần workflow/số thành viên/số Task/%
+   * hoàn thành ngay trên bảng liệt kê, không phải mở từng project mới thấy (khác `findOne` vốn
+   * chỉ 1 project). */
   async findAll(tenantId: string, pagination: PaginationQueryDto) {
     const { page, limit } = pagination;
-    const [data, total] = await this.prisma.$transaction([
+    const [projects, total] = await this.prisma.$transaction([
       this.prisma.project.findMany({
         where: { tenantId },
         skip: (page - 1) * limit,
         take: limit,
         orderBy: { createdAt: 'desc' },
+        include: {
+          workflow: { select: { id: true, name: true } },
+          _count: { select: { members: true, tasks: true } },
+        },
       }),
       this.prisma.project.count({ where: { tenantId } }),
     ]);
+
+    const completedCounts = await this.prisma.task.groupBy({
+      by: ['projectId'],
+      where: { projectId: { in: projects.map((p) => p.id) }, completedAt: { not: null } },
+      _count: { _all: true },
+    });
+    const completedByProject = new Map(completedCounts.map((c) => [c.projectId, c._count._all]));
+
+    const data = projects.map(({ _count, ...p }) => {
+      const totalTasks = _count.tasks;
+      const completedTasks = completedByProject.get(p.id) ?? 0;
+      return {
+        ...p,
+        memberCount: _count.members,
+        totalTasks,
+        completedTasks,
+        completionPercent: totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0,
+      };
+    });
     return { data, total, page, limit };
   }
 

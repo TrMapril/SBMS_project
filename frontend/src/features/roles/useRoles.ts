@@ -18,6 +18,16 @@ export function useMyRoles() {
   })
 }
 
+/** Admin-only: Custom Role hiện tại của 1 Employee bất kỳ (trang User, tính năng "Đổi Custom
+ * Role") — Phase 7.5 Đợt 2. */
+export function useRolesForUser(userId: string | undefined) {
+  return useQuery({
+    queryKey: ['roles', 'by-user', userId],
+    queryFn: () => apiClient.get<Role[]>(`/roles/by-user/${userId}`),
+    enabled: !!userId,
+  })
+}
+
 /** Admin-only: chi tiết 1 Custom Role kèm danh sách user đã được gán. */
 export function useRole(id: string | undefined) {
   return useQuery({
@@ -32,13 +42,21 @@ export function useRoleMutations() {
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['roles'] })
 
   const createRole = useMutation({
-    mutationFn: (name: string) => apiClient.post<Role>('/roles', { name }),
+    mutationFn: ({ name, description }: { name: string; description?: string }) =>
+      apiClient.post<Role>('/roles', { name, description }),
     onSuccess: invalidate,
   })
 
-  const renameRole = useMutation({
-    mutationFn: ({ id, name }: { id: string; name: string }) =>
-      apiClient.patch<Role>(`/roles/${id}`, { name }),
+  const updateRole = useMutation({
+    mutationFn: ({
+      id,
+      name,
+      description,
+    }: {
+      id: string
+      name?: string
+      description?: string
+    }) => apiClient.patch<Role>(`/roles/${id}`, { name, description }),
     onSuccess: invalidate,
   })
 
@@ -53,17 +71,23 @@ export function useRoleMutations() {
     },
   })
 
+  const invalidateWithUser = (userId: string) => {
+    invalidate()
+    void queryClient.invalidateQueries({ queryKey: ['roles', 'by-user', userId] })
+    void queryClient.invalidateQueries({ queryKey: ['users'] })
+  }
+
   const assignUser = useMutation({
     mutationFn: ({ roleId, userId }: { roleId: string; userId: string }) =>
       apiClient.post(`/roles/${roleId}/users`, { userId }),
-    onSuccess: invalidate,
+    onSuccess: (_data, { userId }) => invalidateWithUser(userId),
   })
 
   const unassignUser = useMutation({
     mutationFn: ({ roleId, userId }: { roleId: string; userId: string }) =>
       apiClient.delete(`/roles/${roleId}/users/${userId}`),
-    onSuccess: invalidate,
+    onSuccess: (_data, { userId }) => invalidateWithUser(userId),
   })
 
-  return { createRole, renameRole, removeRole, assignUser, unassignUser }
+  return { createRole, updateRole, removeRole, assignUser, unassignUser }
 }

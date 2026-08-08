@@ -299,6 +299,82 @@ async function main() {
     });
   }
 
+  // ---------- Phase 7.5 Đợt 2 — đa dạng hoá Workflow Template (thêm 3 mẫu ngoài "Simple
+  // Approval" đã có từ Giai đoạn 2) ----------
+  const extraTemplates: {
+    name: string;
+    description: string;
+    definition: {
+      states: { tempId: string; name: string; isStart?: boolean; isEnd?: boolean; orderIndex: number }[];
+      transitions: { name: string; fromTempId: string; toTempId: string }[];
+    };
+  }[] = [
+    {
+      name: 'Bug Tracking',
+      description:
+        'Quy trình theo dõi lỗi: New → Confirmed → In Progress → Fixed → Verified → Closed',
+      definition: {
+        states: [
+          { tempId: 's1', name: 'New', isStart: true, orderIndex: 0 },
+          { tempId: 's2', name: 'Confirmed', orderIndex: 1 },
+          { tempId: 's3', name: 'In Progress', orderIndex: 2 },
+          { tempId: 's4', name: 'Fixed', orderIndex: 3 },
+          { tempId: 's5', name: 'Verified', orderIndex: 4 },
+          { tempId: 's6', name: 'Closed', isEnd: true, orderIndex: 5 },
+        ],
+        transitions: [
+          { name: 'Confirm', fromTempId: 's1', toTempId: 's2' },
+          { name: 'Start Fixing', fromTempId: 's2', toTempId: 's3' },
+          { name: 'Mark Fixed', fromTempId: 's3', toTempId: 's4' },
+          { name: 'Verify', fromTempId: 's4', toTempId: 's5' },
+          { name: 'Reopen', fromTempId: 's5', toTempId: 's3' },
+          { name: 'Close', fromTempId: 's5', toTempId: 's6' },
+        ],
+      },
+    },
+    {
+      name: 'Content Approval',
+      description: 'Quy trình duyệt nội dung: Draft → Review → Approved/Rejected → Published',
+      definition: {
+        states: [
+          { tempId: 's1', name: 'Draft', isStart: true, orderIndex: 0 },
+          { tempId: 's2', name: 'Review', orderIndex: 1 },
+          { tempId: 's3', name: 'Approved', orderIndex: 2 },
+          { tempId: 's4', name: 'Rejected', isEnd: true, orderIndex: 3 },
+          { tempId: 's5', name: 'Published', isEnd: true, orderIndex: 4 },
+        ],
+        transitions: [
+          { name: 'Submit for Review', fromTempId: 's1', toTempId: 's2' },
+          { name: 'Approve', fromTempId: 's2', toTempId: 's3' },
+          { name: 'Reject', fromTempId: 's2', toTempId: 's4' },
+          { name: 'Publish', fromTempId: 's3', toTempId: 's5' },
+        ],
+      },
+    },
+    {
+      name: 'Simple Kanban',
+      description: 'Kanban tối giản: To Do → Doing → Done',
+      definition: {
+        states: [
+          { tempId: 's1', name: 'To Do', isStart: true, orderIndex: 0 },
+          { tempId: 's2', name: 'Doing', orderIndex: 1 },
+          { tempId: 's3', name: 'Done', isEnd: true, orderIndex: 2 },
+        ],
+        transitions: [
+          { name: 'Start', fromTempId: 's1', toTempId: 's2' },
+          { name: 'Complete', fromTempId: 's2', toTempId: 's3' },
+          { name: 'Reopen', fromTempId: 's3', toTempId: 's1' },
+        ],
+      },
+    },
+  ];
+  for (const tpl of extraTemplates) {
+    const exists = await prisma.workflowTemplate.findFirst({ where: { name: tpl.name } });
+    if (!exists) {
+      await prisma.workflowTemplate.create({ data: tpl });
+    }
+  }
+
   console.log('Seed hoàn tất:', {
     tenant: tenant.slug,
     users: [admin.email, manager.email, employee.email],
