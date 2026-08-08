@@ -23,7 +23,10 @@ const QUICK_LINKS: Record<string, { to: string; label: string }[]> = {
   ],
   MANAGER: [{ to: '/projects', label: 'Quản lý dự án' }],
   EMPLOYEE: [{ to: '/projects', label: 'Xem dự án của tôi' }],
-  SUPER_ADMIN: [{ to: '/tenants', label: 'Quản lý doanh nghiệp' }],
+  SUPER_ADMIN: [
+    { to: '/tenants', label: 'Quản lý doanh nghiệp' },
+    { to: '/workflow-templates', label: 'Workflow Template' },
+  ],
 }
 
 /** Phase 7.5 Đợt 2 — gộp "Trang chủ" và "Dashboard" cũ (2 trang riêng, Dashboard trống với

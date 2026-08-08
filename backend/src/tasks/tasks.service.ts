@@ -142,6 +142,10 @@ export class TasksService {
         skip: (page - 1) * limit,
         take: limit,
         orderBy: { createdAt: 'desc' },
+        // Bổ sung sau test tay — Task Board cần biết Custom Field nào ĐÃ điền để tự kiểm tra
+        // trước khi cho bấm transition (thay vì đợi lỗi 400 mới báo), không phải chờ round-trip
+        // fetch riêng từng Task.
+        include: { customFieldValues: true },
       }),
       this.prisma.task.count({ where }),
     ]);
@@ -163,9 +167,34 @@ export class TasksService {
     return task;
   }
 
+  /** Bổ sung sau test tay (ngoài phạm vi Đợt) — Employee tự điền Custom Field trong lúc làm việc
+   * (trước đó chỉ Manager điền được lúc tạo Task). Quyền sửa: assignee HIỆN TẠI của Task, hoặc
+   * Manager/Admin — nhất quán với ràng buộc assignee đã áp dụng cho transition (Đợt 3), nhưng KHÁC
+   * `assertIsAssignee` của WorkflowEngineService ở chỗ Manager CŨNG bypass được ở đây (không chỉ
+   * Admin) vì sửa Custom Field không phải 1 lượt chuyển trạng thái Workflow, chỉ là chỉnh sửa dữ
+   * liệu Task — rủi ro thấp hơn hẳn việc tự ý transition thay người khác. */
+  private assertCanEditCustomFields(
+    requester: JwtPayload,
+    task: { assigneeId: string | null },
+  ) {
+    if (
+      requester.systemRole === 'ADMIN' ||
+      requester.systemRole === 'MANAGER'
+    ) {
+      return;
+    }
+    if (task.assigneeId === requester.userId) {
+      return;
+    }
+    throw new ForbiddenException(
+      'Chỉ assignee của Task hoặc Manager/Admin mới sửa được Custom Field',
+    );
+  }
+
   async assignCustomFieldValues(
     tenantId: string,
     taskId: string,
+    requester: JwtPayload,
     dto: AssignCustomFieldValuesDto,
   ) {
     const task = await this.prisma.task.findFirst({
@@ -173,6 +202,20 @@ export class TasksService {
     });
     if (!task) {
       throw new NotFoundException('Không tìm thấy Task');
+    }
+    this.assertCanEditCustomFields(requester, task);
+    // Task đã khoá vĩnh viễn (Report Done+Xác nhận Done, hoặc Huỷ) — nhất quán với
+    // transition/reportDone/updateAssignee đã chặn sửa khi khoá, Custom Field cũng không nên sửa
+    // được nữa dù trước đó (trước bản sửa này) chưa từng bị chặn.
+    if (task.completedAt) {
+      throw new BadRequestException(
+        'Task đã hoàn thành và bị khoá, không thể sửa Custom Field',
+      );
+    }
+    if (task.cancelledAt) {
+      throw new BadRequestException(
+        'Task đã bị huỷ và bị khoá, không thể sửa Custom Field',
+      );
     }
 
     const normalizedValues =

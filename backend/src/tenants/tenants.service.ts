@@ -23,6 +23,8 @@ import { UpdateTenantStatusDto } from './dto/update-tenant-status.dto';
 
 const BANNER_IMAGE_MAX_COUNT = 5;
 const BANNER_IMAGE_MIME_TYPES = ['image/jpeg', 'image/png'];
+const LOGO_MIME_TYPES = ['image/jpeg', 'image/png'];
+const BACKGROUND_IMAGE_MIME_TYPES = ['image/jpeg', 'image/png'];
 
 @Injectable()
 export class TenantsService {
@@ -90,6 +92,73 @@ export class TenantsService {
     const updated = await this.prisma.tenantConfig.update({
       where: { tenantId },
       data: { bannerImages: [...images, url] },
+    });
+    await this.cache.del(this.configCacheKey(tenantId));
+    return updated;
+  }
+
+  /** Phase 7.5 Đợt 5 mục 2 — thay ô nhập URL logo thủ công bằng upload ảnh thật, cùng cơ chế
+   * validate (size/magic bytes) + xoá ảnh cũ khỏi Storage như bannerImages đã có từ Giai đoạn 7. */
+  async uploadLogo(
+    tenantId: string,
+    file: UploadedFileLike & { originalname: string },
+  ) {
+    assertValidUpload(file, LOGO_MIME_TYPES);
+    const config = await this.getMyConfig(tenantId);
+    const url = await this.storage.upload(`tenant-logos/${tenantId}`, file);
+    if (config.logoUrl) {
+      await this.storage.remove(config.logoUrl);
+    }
+    const updated = await this.prisma.tenantConfig.update({
+      where: { tenantId },
+      data: { logoUrl: url },
+    });
+    await this.cache.del(this.configCacheKey(tenantId));
+    return updated;
+  }
+
+  async uploadBackgroundImage(
+    tenantId: string,
+    file: UploadedFileLike & { originalname: string },
+  ) {
+    assertValidUpload(file, BACKGROUND_IMAGE_MIME_TYPES);
+    const config = await this.getMyConfig(tenantId);
+    const url = await this.storage.upload(
+      `tenant-backgrounds/${tenantId}`,
+      file,
+    );
+    if (config.landingBackgroundImageUrl) {
+      await this.storage.remove(config.landingBackgroundImageUrl);
+    }
+    const updated = await this.prisma.tenantConfig.update({
+      where: { tenantId },
+      data: { landingBackgroundImageUrl: url },
+    });
+    await this.cache.del(this.configCacheKey(tenantId));
+    return updated;
+  }
+
+  async removeLogo(tenantId: string) {
+    const config = await this.getMyConfig(tenantId);
+    if (config.logoUrl) {
+      await this.storage.remove(config.logoUrl);
+    }
+    const updated = await this.prisma.tenantConfig.update({
+      where: { tenantId },
+      data: { logoUrl: null },
+    });
+    await this.cache.del(this.configCacheKey(tenantId));
+    return updated;
+  }
+
+  async removeBackgroundImage(tenantId: string) {
+    const config = await this.getMyConfig(tenantId);
+    if (config.landingBackgroundImageUrl) {
+      await this.storage.remove(config.landingBackgroundImageUrl);
+    }
+    const updated = await this.prisma.tenantConfig.update({
+      where: { tenantId },
+      data: { landingBackgroundImageUrl: null },
     });
     await this.cache.del(this.configCacheKey(tenantId));
     return updated;

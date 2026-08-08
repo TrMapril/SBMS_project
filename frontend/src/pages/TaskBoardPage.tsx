@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import { useProject, useProjectMembers } from '../features/projects/useProjects'
 import { useWorkflow } from '../features/workflow/useWorkflows'
 import {
+  useAssignTaskCustomFields,
   useCancelTask,
   useConfirmDone,
   useCreateTask,
@@ -19,6 +20,7 @@ import { useAssignmentSuggestions } from '../features/algorithms/useAlgorithms'
 import { useAuthStore } from '../store/auth.store'
 import { ApiError } from '../lib/api-client'
 import type {
+  CustomField,
   ProjectMember,
   Task,
   TaskPriority,
@@ -132,6 +134,7 @@ export function TaskBoardPage() {
             canManageAssignee={!!isManager || !!isAdmin}
             members={members ?? []}
             pendingReturnTaskIds={pendingReturnTaskIds}
+            customFields={customFields?.data ?? []}
             assigneeName={(id) => usersById.get(id ?? '')?.fullName}
             onError={(error) => setActionError(translateCustomFieldError(error, customFieldNamesById))}
           />
@@ -156,6 +159,7 @@ function KanbanColumn({
   canManageAssignee,
   members,
   pendingReturnTaskIds,
+  customFields,
   assigneeName,
   onError,
 }: {
@@ -169,6 +173,7 @@ function KanbanColumn({
   canManageAssignee: boolean
   members: ProjectMember[]
   pendingReturnTaskIds: Set<string>
+  customFields: CustomField[]
   assigneeName: (id: string | null) => string | undefined
   onError: (error: unknown) => void
 }) {
@@ -193,6 +198,7 @@ function KanbanColumn({
             canManageAssignee={canManageAssignee}
             members={members}
             hasPendingReturn={pendingReturnTaskIds.has(task.id)}
+            customFields={customFields}
             assigneeName={assigneeName(task.assigneeId)}
             onError={onError}
           />
@@ -213,6 +219,7 @@ function TaskCard({
   canManageAssignee,
   members,
   hasPendingReturn,
+  customFields,
   assigneeName,
   onError,
 }: {
@@ -226,6 +233,7 @@ function TaskCard({
   canManageAssignee: boolean
   members: ProjectMember[]
   hasPendingReturn: boolean
+  customFields: CustomField[]
   assigneeName?: string
   onError: (error: unknown) => void
 }) {
@@ -236,7 +244,12 @@ function TaskCard({
   const cancelTask = useCancelTask(projectId)
   const [showReturnModal, setShowReturnModal] = useState(false)
   const [showReassignModal, setShowReassignModal] = useState(false)
+  const [showCustomFieldsModal, setShowCustomFieldsModal] = useState(false)
+  const [pendingTransition, setPendingTransition] = useState<WorkflowTransition | null>(null)
   const isAssignee = !!currentUserId && task.assigneeId === currentUserId
+  // Bổ sung sau test tay — quyền sửa Custom Field: assignee, hoặc Manager/Admin (đã encode sẵn
+  // trong `canManageAssignee`, tái dùng thay vì tính lại), nhất quán ràng buộc đã có ở backend.
+  const canEditCustomFields = (canManageAssignee || isAssignee) && !task.completedAt && !task.cancelledAt
 
   function canUse(transition: WorkflowTransition) {
     return (
@@ -245,12 +258,53 @@ function TaskCard({
     )
   }
 
-  function handleTransition(transitionId: string) {
+  /** Bổ sung sau test tay — kiểm tra TRƯỚC khi gọi API, thay vì đợi lỗi 400 "Thiếu Custom Field
+   * bắt buộc" mới báo. Field coi là "đã điền" khi có `CustomFieldValue` khác rỗng — khớp đúng
+   * cách BE kiểm tra (`WorkflowEngineService.assertCondition`, lọc `NOT: {value: ''}`). */
+  function missingRequiredFieldNames(transition: WorkflowTransition): string[] {
+    const requiredIds = transition.condition?.requireCustomFields ?? []
+    if (requiredIds.length === 0) return []
+    const filledIds = new Set(
+      (task.customFieldValues ?? [])
+        .filter((v) => v.value.trim() !== '')
+        .map((v) => v.customFieldId),
+    )
+    return requiredIds
+      .filter((id) => !filledIds.has(id))
+      .map((id) => customFields.find((f) => f.id === id)?.name ?? id)
+  }
+
+  function fireTransition(transition: WorkflowTransition) {
     onError(null)
     transitionTask.mutate(
-      { taskId: task.id, transitionId, version: task.version },
-      { onError: (error) => onError(error) },
+      { taskId: task.id, transitionId: transition.id, version: task.version },
+      { onError },
     )
+  }
+
+  function handleTransition(transition: WorkflowTransition) {
+    if (missingRequiredFieldNames(transition).length > 0) {
+      setPendingTransition(transition)
+      setShowCustomFieldsModal(true)
+      return
+    }
+    fireTransition(transition)
+  }
+
+  /** Custom Field vừa lưu xong (đủ điều kiện) — tiếp tục luôn transition đang chờ, không bắt bấm
+   * lại lần 2 (`task.version` không đổi vì sửa Custom Field không đụng optimistic locking). */
+  function handleCustomFieldsSaved() {
+    setShowCustomFieldsModal(false)
+    if (pendingTransition) {
+      const transition = pendingTransition
+      setPendingTransition(null)
+      fireTransition(transition)
+    }
+  }
+
+  function handleCloseCustomFieldsModal() {
+    setShowCustomFieldsModal(false)
+    setPendingTransition(null)
   }
 
   function handleReportDone() {
@@ -277,7 +331,13 @@ function TaskCard({
   return (
     <div className="rounded-md border border-gray-200 bg-white p-3 shadow-sm">
       <div className="mb-1 flex items-start justify-between gap-2">
-        <span className="text-sm font-medium text-gray-900">{task.title}</span>
+        <button
+          onClick={() => setShowCustomFieldsModal(true)}
+          className="text-left text-sm font-medium text-gray-900 hover:text-indigo-700 hover:underline"
+          title="Xem chi tiết Custom Field"
+        >
+          {task.title}
+        </button>
         <span
           className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${PRIORITY_BADGE[task.priority]}`}
         >
@@ -332,12 +392,19 @@ function TaskCard({
             <div className="mt-2 flex flex-wrap gap-1">
               {transitions.map((t) => {
                 const allowed = canUse(t)
+                const missing = allowed ? missingRequiredFieldNames(t) : []
                 return (
                   <button
                     key={t.id}
                     disabled={!allowed || transitionTask.isPending}
-                    title={allowed ? undefined : 'Custom Role của bạn không có quyền transition này'}
-                    onClick={() => handleTransition(t.id)}
+                    title={
+                      !allowed
+                        ? 'Custom Role của bạn không có quyền transition này'
+                        : missing.length > 0
+                          ? `Cần điền Custom Field: ${missing.join(', ')}`
+                          : undefined
+                    }
+                    onClick={() => handleTransition(t)}
                     className={`rounded px-2 py-1 text-xs font-medium ${
                       allowed
                         ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
@@ -345,6 +412,7 @@ function TaskCard({
                     }`}
                   >
                     {t.name}
+                    {missing.length > 0 && <span className="ml-0.5 text-orange-500">●</span>}
                   </button>
                 )
               })}
@@ -454,7 +522,95 @@ function TaskCard({
           onClose={() => setShowReassignModal(false)}
         />
       )}
+      {showCustomFieldsModal && (
+        <CustomFieldsModal
+          projectId={projectId}
+          task={task}
+          customFields={customFields}
+          canEdit={canEditCustomFields}
+          pendingTransitionName={pendingTransition?.name}
+          onClose={handleCloseCustomFieldsModal}
+          onSaved={handleCustomFieldsSaved}
+        />
+      )}
     </div>
+  )
+}
+
+/** Bổ sung sau test tay — trước đây Custom Field chỉ điền được lúc Manager tạo Task (Giai đoạn
+ * 3), Employee (assignee) không có UI nào để tự điền/sửa trong lúc làm việc dù
+ * `PATCH /tasks/:id/custom-fields` đã có sẵn. Dùng lại ĐÚNG modal này cho cả 2 luồng: (1) bấm
+ * tiêu đề Task để xem/sửa chủ động, (2) tự mở khi 1 transition bị thiếu field bắt buộc
+ * (`pendingTransitionName` khác undefined) — điền xong, `onSaved` tự tiếp tục transition đang chờ. */
+function CustomFieldsModal({
+  projectId,
+  task,
+  customFields,
+  canEdit,
+  pendingTransitionName,
+  onClose,
+  onSaved,
+}: {
+  projectId: string
+  task: Task
+  customFields: CustomField[]
+  canEdit: boolean
+  pendingTransitionName?: string
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [values, setValues] = useState<Record<string, string>>(() => {
+    const initial: Record<string, string> = {}
+    for (const f of customFields) {
+      const existing = task.customFieldValues?.find((v) => v.customFieldId === f.id)
+      initial[f.id] = existing?.value ?? f.defaultValue ?? ''
+    }
+    return initial
+  })
+  const assignValues = useAssignTaskCustomFields(projectId)
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    assignValues.mutate({ taskId: task.id, values }, { onSuccess: onSaved })
+  }
+
+  return (
+    <Modal title={`Custom Field — ${task.title}`} onClose={onClose}>
+      {pendingTransitionName && (
+        <div className="mb-3 rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-xs text-orange-800">
+          Cần điền đủ trường bắt buộc bên dưới trước khi chuyển sang "{pendingTransitionName}".
+        </div>
+      )}
+      {customFields.length === 0 ? (
+        <p className="text-sm text-gray-400">Tenant chưa có Custom Field nào.</p>
+      ) : (
+        <form onSubmit={handleSubmit} className="space-y-3">
+          {customFields.map((f) => (
+            <div key={f.id}>
+              <label className="mb-0.5 block text-xs text-gray-500">
+                {f.name} {f.isRequired && <span className="text-red-500">*</span>}
+              </label>
+              <Input
+                value={values[f.id] ?? ''}
+                onChange={(e) => setValues((prev) => ({ ...prev, [f.id]: e.target.value }))}
+                disabled={!canEdit}
+              />
+            </div>
+          ))}
+          {!canEdit && (
+            <p className="text-xs text-gray-400">
+              Chỉ assignee của Task hoặc Manager/Admin mới sửa được Custom Field.
+            </p>
+          )}
+          {assignValues.isError && <ErrorBanner error={assignValues.error} />}
+          {canEdit && (
+            <Button type="submit" className="w-full" disabled={assignValues.isPending}>
+              {assignValues.isPending ? 'Đang lưu...' : 'Lưu'}
+            </Button>
+          )}
+        </form>
+      )}
+    </Modal>
   )
 }
 

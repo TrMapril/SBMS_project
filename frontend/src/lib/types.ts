@@ -355,6 +355,38 @@ export interface PublicTenant {
   landingBackgroundImageUrl: string | null
 }
 
+// ---------- Phase 7.5 Đợt 5 ----------
+
+export interface TenantPost {
+  id: string
+  tenantId: string
+  title: string
+  slug: string
+  coverImageUrl: string | null
+  content: string
+  publishedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface PublicPostSummary {
+  id: string
+  title: string
+  slug: string
+  coverImageUrl: string | null
+  excerpt: string
+  publishedAt: string
+}
+
+export interface PublicPostDetail {
+  id: string
+  title: string
+  slug: string
+  coverImageUrl: string | null
+  content: string
+  publishedAt: string
+}
+
 export type LeaveRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
 /** Phase 7.5 Đợt 1 mục D thêm TASK_RETURN, Đợt 2 thêm CUSTOM (loại đơn mẫu do Admin định nghĩa). */
 export type RequestType = 'LEAVE' | 'TASK_RETURN' | 'CUSTOM'

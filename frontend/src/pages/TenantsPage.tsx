@@ -45,6 +45,7 @@ export function TenantsPage() {
                   Hoạt động gần nhất
                 </th>
                 <th className="px-4 py-2 text-left font-medium text-gray-500">Trạng thái</th>
+                <th className="px-4 py-2 text-left font-medium text-gray-500">Trang doanh nghiệp</th>
                 <th className="px-4 py-2 text-right font-medium text-gray-500">Thao tác</th>
               </tr>
             </thead>
@@ -74,6 +75,16 @@ export function TenantsPage() {
                     >
                       {t.isDisabled ? 'Đã vô hiệu hoá' : 'ACTIVE'}
                     </span>
+                  </td>
+                  <td className="px-4 py-2">
+                    <a
+                      href={`/t/${t.slug}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-indigo-600 hover:underline"
+                    >
+                      /t/{t.slug} ↗
+                    </a>
                   </td>
                   <td className="px-4 py-2 text-right">
                     <div className="flex justify-end gap-2">
@@ -111,7 +122,7 @@ export function TenantsPage() {
               ))}
               {data.data.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-6 text-center text-sm text-gray-400">
+                  <td colSpan={8} className="px-4 py-6 text-center text-sm text-gray-400">
                     Chưa có doanh nghiệp nào.
                   </td>
                 </tr>

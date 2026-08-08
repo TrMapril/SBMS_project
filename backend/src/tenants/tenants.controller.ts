@@ -38,6 +38,18 @@ export class TenantsController {
     private readonly usersService: UsersService,
   ) {}
 
+  /** Phase 7.5 Đợt 5 mục 1 — MỌI role trong tenant (không riêng Admin) cần slug của chính tenant
+   * mình để dựng link "/t/:slug" (icon cạnh chuông thông báo). `@Roles()` rỗng ghi đè
+   * `@Roles('SUPER_ADMIN')` ở mức controller — cùng cách `GET /roles/me` đã làm ở Mục 16
+   * DECISIONS.md (mở cho "quyền của chính tôi", không phải toàn bộ dữ liệu quản trị). */
+  @Roles()
+  @UseInterceptors(TenantInterceptor)
+  @Get('me/slug')
+  async getMySlug(@CurrentTenant() tenantId: string) {
+    const tenant = await this.tenantsService.findOne(tenantId);
+    return { slug: tenant.slug };
+  }
+
   // Admin của tenant (không phải Super Admin) tự xem/sửa Settings (Giai đoạn 4: khung theme +
   // enabledModules; Giai đoạn 5/7 sẽ thêm trường vào chung DTO này). @Roles('ADMIN') ghi đè
   // @Roles('SUPER_ADMIN') ở mức controller. Đặt TRƯỚC @Get(':id')/@Patch(':id') để Nest không
@@ -80,6 +92,52 @@ export class TenantsController {
     @Param('index', ParseIntPipe) index: number,
   ) {
     return this.tenantsService.removeBannerImage(tenantId, index);
+  }
+
+  /** Phase 7.5 Đợt 5 mục 2 — logoUrl/landingBackgroundImageUrl trước đây nhập URL thủ công, giờ
+   * upload ảnh thật qua Supabase Storage (cùng cơ chế giới hạn 5MB + magic bytes như bannerImages
+   * đã có từ Giai đoạn 7). Xoá ảnh cũ khỏi Storage (best-effort) trước khi ghi đè URL mới. */
+  @Roles('ADMIN')
+  @UseInterceptors(
+    TenantInterceptor,
+    FileInterceptor('file', { storage: memoryStorage() }),
+  )
+  @Post('me/config/logo')
+  uploadLogo(
+    @CurrentTenant() tenantId: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return this.tenantsService.uploadLogo(tenantId, file);
+  }
+
+  @Roles('ADMIN')
+  @UseInterceptors(
+    TenantInterceptor,
+    FileInterceptor('file', { storage: memoryStorage() }),
+  )
+  @Post('me/config/background-image')
+  uploadBackgroundImage(
+    @CurrentTenant() tenantId: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return this.tenantsService.uploadBackgroundImage(tenantId, file);
+  }
+
+  /** Xoá hẳn logo/ảnh nền — khác `PATCH me/config` (chỉ đổi URL text) ở chỗ CÓ dọn file khỏi
+   * Storage, cùng tinh thần `removeBannerImage`. Không dùng `PATCH {logoUrl:''}` để xoá vì cách
+   * đó chỉ xoá tham chiếu DB, để lại file mồ côi trong bucket. */
+  @Roles('ADMIN')
+  @UseInterceptors(TenantInterceptor)
+  @Delete('me/config/logo')
+  removeLogo(@CurrentTenant() tenantId: string) {
+    return this.tenantsService.removeLogo(tenantId);
+  }
+
+  @Roles('ADMIN')
+  @UseInterceptors(TenantInterceptor)
+  @Delete('me/config/background-image')
+  removeBackgroundImage(@CurrentTenant() tenantId: string) {
+    return this.tenantsService.removeBackgroundImage(tenantId);
   }
 
   @Post()

@@ -36,4 +36,49 @@ export class PublicService {
       landingBackgroundImageUrl: config.landingBackgroundImageUrl,
     };
   }
+
+  /** Phase 7.5 Đợt 5 — chỉ trả bài viết ĐÃ XUẤT BẢN (`publishedAt` khác null), bài nháp không lộ
+   * ra public dù biết đúng slug. Trả `excerpt` (160 ký tự đầu `content`) thay vì toàn bộ nội dung
+   * cho danh sách dạng card — tiết kiệm băng thông, đọc đầy đủ ở trang chi tiết. */
+  async listPosts(slug: string) {
+    const tenant = await this.prisma.tenant.findUnique({ where: { slug } });
+    if (!tenant) {
+      throw new NotFoundException('Không tìm thấy doanh nghiệp này');
+    }
+    const posts = await this.prisma.tenantPost.findMany({
+      where: { tenantId: tenant.id, publishedAt: { not: null } },
+      orderBy: { publishedAt: 'desc' },
+      select: {
+        id: true,
+        title: true,
+        slug: true,
+        coverImageUrl: true,
+        content: true,
+        publishedAt: true,
+      },
+    });
+    return posts.map((p) => ({
+      id: p.id,
+      title: p.title,
+      slug: p.slug,
+      coverImageUrl: p.coverImageUrl,
+      excerpt:
+        p.content.length > 160 ? `${p.content.slice(0, 160)}...` : p.content,
+      publishedAt: p.publishedAt,
+    }));
+  }
+
+  async getPost(slug: string, postSlug: string) {
+    const tenant = await this.prisma.tenant.findUnique({ where: { slug } });
+    if (!tenant) {
+      throw new NotFoundException('Không tìm thấy doanh nghiệp này');
+    }
+    const post = await this.prisma.tenantPost.findUnique({
+      where: { tenantId_slug: { tenantId: tenant.id, slug: postSlug } },
+    });
+    if (!post || !post.publishedAt) {
+      throw new NotFoundException('Không tìm thấy bài viết');
+    }
+    return post;
+  }
 }

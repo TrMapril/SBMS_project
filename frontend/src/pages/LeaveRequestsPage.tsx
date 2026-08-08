@@ -5,9 +5,9 @@ import {
   useResetTask,
   useResolveLeaveRequest,
 } from '../features/leave-requests/useLeaveRequests'
-import { useRequestTypeMutations, useRequestTypes } from '../features/request-types/useRequestTypes'
+import { useRequestTypes } from '../features/request-types/useRequestTypes'
 import { useAuthStore } from '../store/auth.store'
-import type { LeaveRequest, LeaveRequestStatus, RequestType, RequestTypeField } from '../lib/types'
+import type { LeaveRequest, LeaveRequestStatus, RequestType } from '../lib/types'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
 import { Select } from '../components/ui/Select'
@@ -52,7 +52,6 @@ export function LeaveRequestsPage() {
     typeFilter || undefined,
   )
   const [showCreate, setShowCreate] = useState(false)
-  const [showCreateType, setShowCreateType] = useState(false)
 
   if (!user) return null
 
@@ -61,11 +60,6 @@ export function LeaveRequestsPage() {
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-xl font-semibold text-gray-900">Đơn từ nội bộ</h1>
         <div className="flex gap-2">
-          {user.systemRole === 'ADMIN' && (
-            <Button variant="secondary" onClick={() => setShowCreateType(true)}>
-              + Loại đơn mới
-            </Button>
-          )}
           {canCreate && <Button onClick={() => setShowCreate(true)}>+ Gửi đơn</Button>}
         </div>
       </div>
@@ -179,7 +173,6 @@ export function LeaveRequestsPage() {
       )}
 
       {showCreate && <CreateLeaveRequestModal onClose={() => setShowCreate(false)} />}
-      {showCreateType && <CreateRequestTypeModal onClose={() => setShowCreateType(false)} />}
     </div>
   )
 }
@@ -364,100 +357,6 @@ function CreateLeaveRequestModal({ onClose }: { onClose: () => void }) {
 
           <Button type="submit" className="w-full" disabled={createLeaveRequest.isPending}>
             {createLeaveRequest.isPending ? 'Đang gửi...' : 'Gửi đơn'}
-          </Button>
-        </form>
-      </div>
-    </div>
-  )
-}
-
-function CreateRequestTypeModal({ onClose }: { onClose: () => void }) {
-  const [name, setName] = useState('')
-  const [fields, setFields] = useState<RequestTypeField[]>([
-    { key: '', label: '', required: true },
-  ])
-  const { createRequestType } = useRequestTypeMutations()
-
-  function updateField(index: number, patch: Partial<RequestTypeField>) {
-    setFields((prev) => prev.map((f, i) => (i === index ? { ...f, ...patch } : f)))
-  }
-
-  function addField() {
-    setFields((prev) => [...prev, { key: '', label: '', required: true }])
-  }
-
-  function removeField(index: number) {
-    setFields((prev) => prev.filter((_, i) => i !== index))
-  }
-
-  function handleSubmit(e: FormEvent) {
-    e.preventDefault()
-    const cleaned = fields
-      .filter((f) => f.label.trim())
-      .map((f) => ({
-        ...f,
-        key: f.key.trim() || f.label.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_'),
-      }))
-    createRequestType.mutate({ name, fields: cleaned }, { onSuccess: onClose })
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-lg">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-gray-900">Tạo loại đơn mới</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600" aria-label="Đóng">
-            ✕
-          </button>
-        </div>
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">Tên loại đơn</label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">
-              Các trường cần điền
-            </label>
-            <div className="space-y-2">
-              {fields.map((f, index) => (
-                <div key={index} className="flex items-center gap-2">
-                  <Input
-                    placeholder="Tên trường (vd: Nơi công tác)"
-                    value={f.label}
-                    onChange={(e) => updateField(index, { label: e.target.value })}
-                    className="flex-1"
-                  />
-                  <label className="flex items-center gap-1 text-xs text-gray-500">
-                    <input
-                      type="checkbox"
-                      checked={f.required}
-                      onChange={(e) => updateField(index, { required: e.target.checked })}
-                    />
-                    Bắt buộc
-                  </label>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="px-2 py-1 text-xs"
-                    disabled={fields.length === 1}
-                    onClick={() => removeField(index)}
-                  >
-                    Xoá
-                  </Button>
-                </div>
-              ))}
-            </div>
-            <Button type="button" variant="secondary" className="mt-2" onClick={addField}>
-              + Thêm trường
-            </Button>
-          </div>
-
-          {createRequestType.isError && <ErrorBanner error={createRequestType.error} />}
-
-          <Button type="submit" className="w-full" disabled={createRequestType.isPending}>
-            {createRequestType.isPending ? 'Đang tạo...' : 'Tạo loại đơn'}
           </Button>
         </form>
       </div>

@@ -472,3 +472,24 @@ CREATE POLICY request_type_templates_tenant_isolation ON request_type_templates
     current_setting('app.is_super_admin', true) = 'true'
     OR tenant_id = current_setting('app.current_tenant_id', true)
   );
+
+-- ============================================================================
+-- Phase 7.5 Đợt 5: tenant_posts (module "Bài viết" cho landing page). `workflow_templates` KHÔNG
+-- cần policy riêng — bảng đó vốn dĩ không có cột tenant_id (dùng chung cho mọi tenant import),
+-- không phải dữ liệu cách ly theo tenant.
+-- ============================================================================
+
+ALTER TABLE tenant_posts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tenant_posts FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS tenant_posts_tenant_isolation ON tenant_posts;
+CREATE POLICY tenant_posts_tenant_isolation ON tenant_posts
+  FOR ALL
+  USING (
+    current_setting('app.is_super_admin', true) = 'true'
+    OR tenant_id = current_setting('app.current_tenant_id', true)
+  )
+  WITH CHECK (
+    current_setting('app.is_super_admin', true) = 'true'
+    OR tenant_id = current_setting('app.current_tenant_id', true)
+  );

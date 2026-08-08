@@ -19,6 +19,7 @@ import { LeaveRequestsModule } from './leave-requests/leave-requests.module';
 import { PersonnelModule } from './personnel/personnel.module';
 import { EmployeeProfilesModule } from './employee-profiles/employee-profiles.module';
 import { RequestTypesModule } from './request-types/request-types.module';
+import { PostsModule } from './posts/posts.module';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { RequestTypesModule } from './request-types/request-types.module';
     PersonnelModule,
     EmployeeProfilesModule,
     RequestTypesModule,
+    PostsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

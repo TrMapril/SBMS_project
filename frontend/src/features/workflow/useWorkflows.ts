@@ -8,6 +8,8 @@ import type {
   WorkflowDetail,
   WorkflowState,
   WorkflowTemplate,
+  WorkflowTemplateDefinitionState,
+  WorkflowTemplateDefinitionTransition,
 } from '../../lib/types'
 
 /** Phase 7.5 Đợt 2 — trang Workflow đổi sang bảng có tìm kiếm + lọc theo is_active. */
@@ -67,6 +69,59 @@ export function useWorkflowTemplates() {
   return useQuery({
     queryKey: ['workflow-templates'],
     queryFn: () => apiClient.get<WorkflowTemplate[]>('/workflow-templates'),
+  })
+}
+
+export function useWorkflowTemplate(id: string | undefined) {
+  return useQuery({
+    queryKey: ['workflow-templates', id],
+    queryFn: () => apiClient.get<WorkflowTemplate>(`/workflow-templates/${id}`),
+    enabled: !!id,
+  })
+}
+
+/** Phase 7.5 Đợt 5 mục 6 — CRUD Workflow Template, chỉ Super Admin gọi được (BE tự chặn qua
+ * @Roles). Tạo mới luôn bắt đầu definition rỗng, xây đồ thị sau qua canvas builder — xem
+ * TemplateBuilderPage.tsx. */
+export function useCreateWorkflowTemplate() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { name: string; description?: string }) =>
+      apiClient.post<WorkflowTemplate>('/workflow-templates', input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['workflow-templates'] })
+    },
+  })
+}
+
+export interface UpdateWorkflowTemplateInput {
+  name?: string
+  description?: string
+  definition?: {
+    states: WorkflowTemplateDefinitionState[]
+    transitions: WorkflowTemplateDefinitionTransition[]
+  }
+}
+
+export function useUpdateWorkflowTemplate(id: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: UpdateWorkflowTemplateInput) =>
+      apiClient.patch<WorkflowTemplate>(`/workflow-templates/${id}`, input),
+    onSuccess: (template) => {
+      queryClient.setQueryData(['workflow-templates', id], template)
+      void queryClient.invalidateQueries({ queryKey: ['workflow-templates'], exact: true })
+    },
+  })
+}
+
+export function useDeleteWorkflowTemplate() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/workflow-templates/${id}`),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['workflow-templates'] })
+    },
   })
 }
 

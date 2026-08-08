@@ -10,12 +10,15 @@ import { CustomFieldsPage } from './pages/CustomFieldsPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { ProjectsPage } from './pages/ProjectsPage'
 import { TenantsPage } from './pages/TenantsPage'
+import { WorkflowTemplatesPage } from './pages/WorkflowTemplatesPage'
+import { WorkflowTemplateBuilderPage } from './pages/WorkflowTemplateBuilderPage'
 import { ProjectDetailPage } from './pages/ProjectDetailPage'
 import { AdminProjectDetailPage, AdminProjectsPage } from './pages/AdminProjectsPage'
 import { WorkflowsPage } from './pages/WorkflowsPage'
 import { WorkflowBuilderPage } from './pages/WorkflowBuilderPage'
 import { TaskBoardPage } from './pages/TaskBoardPage'
 import { PublicTenantPage } from './pages/PublicTenantPage'
+import { PublicPostPage } from './pages/PublicPostPage'
 import { LeaveRequestsPage } from './pages/LeaveRequestsPage'
 import { PersonnelPage } from './pages/PersonnelPage'
 import { EmployeeProfilePage } from './pages/EmployeeProfilePage'
@@ -27,6 +30,7 @@ function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/t/:slug" element={<PublicTenantPage />} />
+      <Route path="/t/:slug/blog/:postSlug" element={<PublicPostPage />} />
       <Route
         path="/change-password"
         element={
@@ -53,6 +57,24 @@ function App() {
           element={
             <ProtectedRoute roles={['SUPER_ADMIN']}>
               <TenantsPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Phase 7.5 Đợt 5 mục 6 — quản lý Workflow Template dùng chung, chỉ Super Admin. */}
+        <Route
+          path="/workflow-templates"
+          element={
+            <ProtectedRoute roles={['SUPER_ADMIN']}>
+              <WorkflowTemplatesPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/workflow-templates/:id"
+          element={
+            <ProtectedRoute roles={['SUPER_ADMIN']}>
+              <WorkflowTemplateBuilderPage />
             </ProtectedRoute>
           }
         />

@@ -53,13 +53,16 @@ export class TasksController {
     return this.tasksService.findOne(tenantId, id);
   }
 
+  // Không @Roles() — quyền xét theo "là assignee của Task, hoặc Manager/Admin" trong Service
+  // (assertCanEditCustomFields), không theo System Role đơn thuần.
   @Patch(':id/custom-fields')
   assignCustomFieldValues(
     @CurrentTenant() tenantId: string,
+    @CurrentUser() user: JwtPayload,
     @Param('id') id: string,
     @Body() dto: AssignCustomFieldValuesDto,
   ) {
-    return this.tasksService.assignCustomFieldValues(tenantId, id, dto);
+    return this.tasksService.assignCustomFieldValues(tenantId, id, user, dto);
   }
 
   @Post(':id/transition')

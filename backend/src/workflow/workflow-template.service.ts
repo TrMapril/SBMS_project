@@ -1,11 +1,50 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { ImportWorkflowTemplateDto } from './dto/import-workflow-template.dto';
+import { CreateWorkflowTemplateDto } from './dto/create-workflow-template.dto';
+import { UpdateWorkflowTemplateDto } from './dto/update-workflow-template.dto';
 import { WorkflowTemplateDefinition } from './types/workflow-template-definition.type';
 
 @Injectable()
 export class WorkflowTemplateService {
   constructor(private readonly prisma: PrismaService) {}
+
+  /** Phase 7.5 Đợt 5 mục 6 — Super Admin tạo Template MỚI luôn bắt đầu rỗng (states/transitions
+   * = []), xây đồ thị sau đó qua canvas builder (giống trải nghiệm "tạo Workflow rồi kéo-thả thêm
+   * State" đã có cho Workflow thật, không bắt nhập sẵn JSON lúc tạo). */
+  async create(dto: CreateWorkflowTemplateDto) {
+    return this.prisma.workflowTemplate.create({
+      data: {
+        name: dto.name,
+        description: dto.description,
+        definition: { states: [], transitions: [] },
+      },
+    });
+  }
+
+  /** Ghi đè toàn bộ `definition` — canvas builder luôn gửi lại nguyên đồ thị sau mỗi lần Lưu. */
+  async update(id: string, dto: UpdateWorkflowTemplateDto) {
+    await this.findOne(id);
+    return this.prisma.workflowTemplate.update({
+      where: { id },
+      data: {
+        name: dto.name,
+        description: dto.description,
+        definition: dto.definition
+          ? (dto.definition as unknown as object)
+          : undefined,
+      },
+    });
+  }
+
+  /** Không cần kiểm tra "đang được dùng" trước khi xoá — import LUÔN clone dữ liệu (Mục 3.10
+   * CLAUDE.md, Quyết định #10 DECISIONS.md), Workflow đã import không giữ tham chiếu ngược lại
+   * template gốc, nên xoá template không ảnh hưởng bất kỳ Workflow/Task nào đang chạy. */
+  async remove(id: string) {
+    await this.findOne(id);
+    await this.prisma.workflowTemplate.delete({ where: { id } });
+    return { id };
+  }
 
   async findAll() {
     return this.prisma.workflowTemplate.findMany({

@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { usePublicTenant } from '../features/public/usePublicTenant'
+import { usePublicPosts } from '../features/public/usePublicPosts'
 import { Spinner } from '../components/ui/Spinner'
 
 const SOCIAL_LABELS: Record<string, string> = {
@@ -97,6 +98,8 @@ export function PublicTenantPage() {
           </div>
         )}
 
+        <PostsSection slug={slug} />
+
         {(tenant.address || tenant.contactPhone || tenant.contactEmail) && (
           <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-600">
             <h2 className="mb-2 text-sm font-semibold text-gray-900">Thông tin liên hệ</h2>
@@ -122,6 +125,40 @@ export function PublicTenantPage() {
           ))}
         </footer>
       )}
+    </div>
+  )
+}
+
+/** Phase 7.5 Đợt 5 mục 4 — danh sách bài viết dạng card (ảnh + tiêu đề + trích đoạn), bấm vào mở
+ * trang chi tiết `/t/:slug/blog/:postSlug`. Không hiện section nếu tenant chưa có bài viết nào đã
+ * xuất bản (tránh 1 khung rỗng vô nghĩa trên trang giới thiệu). */
+function PostsSection({ slug }: { slug: string | undefined }) {
+  const { data: posts } = usePublicPosts(slug)
+  if (!posts || posts.length === 0) return null
+
+  return (
+    <div className="mb-8">
+      <h2 className="mb-3 text-sm font-semibold text-gray-900">Bài viết</h2>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {posts.map((post) => (
+          <Link
+            key={post.id}
+            to={`/t/${slug}/blog/${post.slug}`}
+            className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm hover:border-indigo-300"
+          >
+            {post.coverImageUrl && (
+              <img src={post.coverImageUrl} alt="" className="h-36 w-full object-cover" />
+            )}
+            <div className="p-3">
+              <h3 className="text-sm font-semibold text-gray-900">{post.title}</h3>
+              <p className="mt-1 line-clamp-2 text-xs text-gray-500">{post.excerpt}</p>
+              <p className="mt-2 text-[11px] text-gray-400">
+                {new Date(post.publishedAt).toLocaleDateString('vi-VN')}
+              </p>
+            </div>
+          </Link>
+        ))}
+      </div>
     </div>
   )
 }

@@ -127,6 +127,7 @@ model Tenant {
   personnelProposals   PersonnelProposal[]
   employeeProfiles     EmployeeProfile[]
   requestTypeTemplates RequestTypeTemplate[]
+  posts                TenantPost[]
 
   @@map("tenants")
 }
@@ -558,6 +559,30 @@ model RequestTypeTemplate {
 
   @@unique([tenantId, name])
   @@map("request_type_templates")
+}
+
+/// Phase 7.5 Đợt 5 — module "Bài viết" cho trang giới thiệu doanh nghiệp (mở rộng có kiểm soát so
+/// với Quyết định #9 CLAUDE.md "layout tĩnh, không page builder" — đây KHÔNG phải page builder,
+/// chỉ là danh sách bài viết dạng blog đơn giản, layout hiển thị vẫn cố định 1 kiểu cho mọi
+/// tenant). `content` là text thuần, không markdown/rich-text (đúng yêu cầu "giữ tối giản").
+/// `publishedAt = null` nghĩa là bài viết ở dạng NHÁP, chưa hiện trên trang public.
+model TenantPost {
+  id            String    @id @default(uuid())
+  tenantId      String    @map("tenant_id")
+  title         String
+  /// Sinh tự động từ title lúc tạo (không đổi lại khi sửa title sau đó, giữ URL ổn định — giống
+  /// quy ước slug bất biến của phần lớn hệ thống blog/CMS).
+  slug          String
+  coverImageUrl String?   @map("cover_image_url")
+  content       String
+  publishedAt   DateTime? @map("published_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, slug])
+  @@map("tenant_posts")
 }
 
 /// Giai đoạn 7 — hồ sơ năng lực NỘI BỘ, chỉ Manager/Admin xem (Mục 4.3 tài liệu phân tích thiết
