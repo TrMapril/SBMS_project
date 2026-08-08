@@ -324,6 +324,11 @@ model Task {
   /// completedAt được set, Task bị khoá vĩnh viễn (không transition được nữa, kể cả Reopen).
   pendingDoneConfirmation Boolean      @default(false) @map("pending_done_confirmation")
   completedAt             DateTime?    @map("completed_at")
+  /// Phase 7.5 Đợt 3 (bổ sung sau test tay) — Manager "Huỷ" 1 Task (khác hẳn huỷ cả Project ở
+  /// `projects.status`). Task bị huỷ cũng bị khoá vĩnh viễn như `completedAt` (không transition
+  /// được nữa) nhưng KHÔNG tính là "đã hoàn thành" cho số liệu năng lực/Thuật toán — chỉ loại trừ
+  /// khỏi mẫu số khi tính % hoàn thành Project (xem `ProjectsService.getCompletionStats`).
+  cancelledAt             DateTime?    @map("cancelled_at")
   createdAt               DateTime     @default(now()) @map("created_at")
   updatedAt               DateTime     @updatedAt @map("updated_at")
 

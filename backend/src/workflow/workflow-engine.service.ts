@@ -6,7 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { WorkflowTransition } from '@prisma/client';
+import { SystemRole, WorkflowTransition } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { TransitionCondition } from './types/transition-condition.type';
 import { WorkflowCacheService, WorkflowStructure } from './workflow-cache.service';
@@ -16,6 +16,7 @@ export interface TransitionParams {
   tenantId: string;
   taskId: string;
   userId: string;
+  requesterSystemRole: SystemRole;
   transitionId: string;
   expectedVersion: number;
   comment?: string;
@@ -48,8 +49,15 @@ export class WorkflowEngineService {
   ) {}
 
   async transition(params: TransitionParams) {
-    const { tenantId, taskId, userId, transitionId, expectedVersion, comment } =
-      params;
+    const {
+      tenantId,
+      taskId,
+      userId,
+      requesterSystemRole,
+      transitionId,
+      expectedVersion,
+      comment,
+    } = params;
 
     // Bước 1: lấy trạng thái hiện tại — đọc DUY NHẤT 1 LẦN, dùng làm snapshot chung cho mọi
     // bước kiểm tra bên dưới (không đọc lại task ở đâu khác trong hàm này). Kèm workflowId của
@@ -90,6 +98,14 @@ export class WorkflowEngineService {
 
     // Bước 3: kiểm tra quyền theo Custom Role — KHÔNG dùng System Role (Mục 3.2)
     await this.assertRolePermission(userId, transition);
+
+    // Phase 7.5 Đợt 3 (thu hẹp sau khi test tay) — CỘNG THÊM vào allow_roles (không thay thế):
+    // actor phải là assignee của Task. CHỈ Admin còn được bypass (hỗ trợ khẩn cấp) — Manager
+    // KHÔNG còn bypass nữa, tránh làm sai lệch dữ liệu `action_by` dùng để đánh giá năng lực
+    // (Manager tự transition thay Employee sẽ khiến hệ thống ghi nhận nhầm là chính Manager thực
+    // hiện bước đó). Manager muốn giao Task cho người khác thực hiện thì dùng "Đổi assignee"
+    // (`PATCH /tasks/:id/assignee`), không tự transition thay được nữa.
+    this.assertIsAssignee(requesterSystemRole, userId, transition, task);
 
     // Bước 4: kiểm tra condition — chỉ 2 loại (Mục 3.5)
     await this.assertCondition(transition, task);
@@ -162,6 +178,31 @@ export class WorkflowEngineService {
     if (matchedCount === 0) {
       throw new ForbiddenException(
         'Không có Custom Role phù hợp để thực hiện Transition này',
+      );
+    }
+  }
+
+  /** Phase 7.5 Đợt 3 (thu hẹp sau khi test tay) — actor phải VỪA có Custom Role trong allow_roles
+   * (đã kiểm tra ở `assertRolePermission`) VỪA là assignee của Task. Áp dụng cho MỌI system role
+   * TRỪ Admin (bypass để hỗ trợ khẩn cấp) — ban đầu chỉ áp dụng cho Employee, sau khi test tay mở
+   * rộng sang cả Manager. Ngoại lệ: bỏ qua ràng buộc assignee khi `allow_roles` rỗng VÀ Task CHƯA
+   * có assignee — đúng nguyên văn phase_7_5.md, tránh phá luồng khởi đầu Task (vd transition đầu
+   * tiên từ Backlog, chưa ai được giao). */
+  private assertIsAssignee(
+    requesterSystemRole: SystemRole,
+    userId: string,
+    transition: WorkflowTransition,
+    task: { assigneeId: string | null },
+  ) {
+    if (requesterSystemRole === 'ADMIN') return;
+
+    const allowRoles = (transition.allowRoles as string[]) ?? [];
+    const skipAssigneeCheck = allowRoles.length === 0 && task.assigneeId === null;
+    if (skipAssigneeCheck) return;
+
+    if (task.assigneeId !== userId) {
+      throw new ForbiddenException(
+        'Chỉ assignee hiện tại của Task mới được thực hiện Transition này',
       );
     }
   }

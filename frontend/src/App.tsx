@@ -46,10 +46,12 @@ function App() {
             /dashboard riêng (xem HomePage.tsx). */}
         <Route path="/" element={<HomePage />} />
 
+        {/* Phase 7.5 Đợt 3 (bổ sung sau test tay) — Manager xem được (read-only, UsersPage.tsx tự
+            ẩn nút tạo/khoá/đổi role khi không phải Admin). */}
         <Route
           path="/users"
           element={
-            <ProtectedRoute roles={['ADMIN']}>
+            <ProtectedRoute roles={['ADMIN', 'MANAGER']}>
               <UsersPage />
             </ProtectedRoute>
           }

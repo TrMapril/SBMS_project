@@ -67,6 +67,67 @@ export function useTransitionTask(projectId: string) {
   })
 }
 
+/** Phase 7.5 Đợt 1 mục B — assignee "Report Done" khi Task đang ở State is_end=true. */
+export function useReportDone(projectId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (taskId: string) => apiClient.post<Task>(`/tasks/${taskId}/report-done`),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['tasks', { projectId }] })
+    },
+  })
+}
+
+/** Manager "Xác nhận Done" — khoá Task vĩnh viễn. */
+export function useConfirmDone(projectId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (taskId: string) => apiClient.post<Task>(`/tasks/${taskId}/confirm-done`),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['tasks', { projectId }] })
+      void queryClient.invalidateQueries({ queryKey: ['projects'] })
+    },
+  })
+}
+
+/** Phase 7.5 Đợt 3 (bổ sung sau test tay) — Manager "Huỷ" Task: khoá vĩnh viễn như confirm-done
+ * nhưng KHÔNG tính là hoàn thành, chỉ loại khỏi mẫu số % hoàn thành Project. */
+export function useCancelTask(projectId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (taskId: string) => apiClient.post<Task>(`/tasks/${taskId}/cancel`),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['tasks', { projectId }] })
+      void queryClient.invalidateQueries({ queryKey: ['projects'] })
+    },
+  })
+}
+
+/** Phase 7.5 Đợt 3 (bổ sung sau test tay) — Manager "Trả lại" khi Report Done chưa đạt: Task hoàn
+ * về đúng State trước đó (KHÔNG khoá), khác "Trả task"/Reset (đưa hẳn về State bắt đầu). */
+export function useRejectDone(projectId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (taskId: string) => apiClient.post<Task>(`/tasks/${taskId}/reject-done`),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['tasks', { projectId }] })
+    },
+  })
+}
+
+/** Phase 7.5 Đợt 3 (bổ sung sau test tay) — Manager/Admin đổi assignee của Task đang active, chỉ
+ * chọn được trong số `project_members` của project đó (kiểm tra ở BE). */
+export function useUpdateTaskAssignee(projectId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ taskId, assigneeId }: { taskId: string; assigneeId: string }) =>
+      apiClient.patch<Task>(`/tasks/${taskId}/assignee`, { assigneeId }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['tasks', { projectId }] })
+    },
+  })
+}
+
 export function useAssignTaskCustomFields(projectId: string) {
   const queryClient = useQueryClient()
   return useMutation({

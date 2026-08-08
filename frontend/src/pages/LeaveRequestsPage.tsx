@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import {
   useCreateLeaveRequest,
   useLeaveRequests,
+  useResetTask,
   useResolveLeaveRequest,
 } from '../features/leave-requests/useLeaveRequests'
 import { useRequestTypeMutations, useRequestTypes } from '../features/request-types/useRequestTypes'
@@ -42,6 +43,8 @@ export function LeaveRequestsPage() {
   // (view-only, không có nút duyệt) — khác Manager vừa xem toàn bộ vừa duyệt được.
   const canResolve = user?.systemRole === 'MANAGER'
   const canViewAll = user?.systemRole === 'MANAGER' || user?.systemRole === 'ADMIN'
+  // Phase 7.5 Đợt 3 — Manager không còn tự gửi đơn được nữa (chỉ Employee/Admin).
+  const canCreate = user?.systemRole !== 'MANAGER'
   const [statusFilter, setStatusFilter] = useState<LeaveRequestStatus | ''>('')
   const [typeFilter, setTypeFilter] = useState<RequestType | ''>('')
   const { data, isLoading, error } = useLeaveRequests(
@@ -63,7 +66,7 @@ export function LeaveRequestsPage() {
               + Loại đơn mới
             </Button>
           )}
-          <Button onClick={() => setShowCreate(true)}>+ Gửi đơn</Button>
+          {canCreate && <Button onClick={() => setShowCreate(true)}>+ Gửi đơn</Button>}
         </div>
       </div>
 
@@ -164,6 +167,12 @@ export function LeaveRequestsPage() {
               {canResolve && lr.status === 'PENDING' && (
                 <ResolveActions leaveRequestId={lr.id} type={lr.type} />
               )}
+              {/* Phase 7.5 Đợt 3 — sau khi đã duyệt đơn TASK_RETURN (dù phù hợp hay không), Manager
+                  bấm "Reset" để đưa Task về State ban đầu, gỡ assignee, giao lại sau. Chỉ hiện 1
+                  lần cho tới khi đã reset (`taskResetAt`). */}
+              {canResolve && lr.type === 'TASK_RETURN' && lr.status !== 'PENDING' && !lr.taskResetAt && (
+                <ResetTaskAction leaveRequestId={lr.id} />
+              )}
             </div>
           ))}
         </div>
@@ -216,6 +225,24 @@ function ResolveActions({
           {rejectLabel}
         </Button>
       </div>
+    </div>
+  )
+}
+
+function ResetTaskAction({ leaveRequestId }: { leaveRequestId: string }) {
+  const resetTask = useResetTask()
+
+  return (
+    <div className="mt-3 border-t border-gray-100 pt-3">
+      {resetTask.isError && <ErrorBanner error={resetTask.error} />}
+      <Button
+        variant="secondary"
+        className="px-3 py-1.5 text-xs"
+        disabled={resetTask.isPending}
+        onClick={() => resetTask.mutate(leaveRequestId)}
+      >
+        {resetTask.isPending ? 'Đang reset...' : 'Reset Task (đưa về trạng thái ban đầu)'}
+      </Button>
     </div>
   )
 }

@@ -35,16 +35,21 @@ export class ProjectsController {
 
   @Roles('MANAGER')
   @Post()
-  create(@CurrentTenant() tenantId: string, @Body() dto: CreateProjectDto) {
-    return this.projectsService.create(tenantId, dto);
+  create(
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: CreateProjectDto,
+  ) {
+    return this.projectsService.create(tenantId, user.userId, dto);
   }
 
   @Get()
   findAll(
     @CurrentTenant() tenantId: string,
     @Query() pagination: PaginationQueryDto,
+    @CurrentUser() user: JwtPayload,
   ) {
-    return this.projectsService.findAll(tenantId, pagination);
+    return this.projectsService.findAll(tenantId, pagination, user);
   }
 
   @Get(':id')

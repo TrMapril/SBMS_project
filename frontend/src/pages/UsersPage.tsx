@@ -9,6 +9,7 @@ import {
   type BulkCreateUsersResult,
 } from '../features/users/useUsers'
 import { useRoleMutations, useRoles, useRolesForUser } from '../features/roles/useRoles'
+import { useAuthStore } from '../store/auth.store'
 import type { SystemRole, User, UserStatus } from '../lib/types'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
@@ -23,7 +24,12 @@ const STATUS_BADGE: Record<UserStatus, string> = {
   PENDING: 'bg-yellow-100 text-yellow-700',
 }
 
+/** Phase 7.5 Đợt 3 (bổ sung sau test tay) — Manager cũng xem được trang này (BE `GET /users` vốn
+ * đã mở cho mọi thành viên tenant), nhưng CHỈ XEM: không tạo/thêm hàng loạt/đổi Custom Role/khoá-
+ * mở khoá — 3 việc đó vẫn chỉ Admin làm được (`isAdmin` gate riêng từng nút/cột thao tác, không
+ * gate cả trang, để Manager vẫn dùng được tìm kiếm/lọc/"Xem chi tiết" như Admin). */
 export function UsersPage() {
+  const isAdmin = useAuthStore((s) => s.user?.systemRole === 'ADMIN')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<UserStatus | ''>('')
   const { data, isLoading, error } = useUsers({
@@ -39,12 +45,14 @@ export function UsersPage() {
     <div>
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-xl font-semibold text-gray-900">Người dùng</h1>
-        <div className="flex gap-2">
-          <Button variant="secondary" onClick={() => setShowBulkCreate(true)}>
-            + Thêm hàng loạt
-          </Button>
-          <Button onClick={() => setShowCreate(true)}>+ Tạo user</Button>
-        </div>
+        {isAdmin && (
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => setShowBulkCreate(true)}>
+              + Thêm hàng loạt
+            </Button>
+            <Button onClick={() => setShowCreate(true)}>+ Tạo user</Button>
+          </div>
+        )}
       </div>
 
       <div className="mb-3 flex items-center gap-2">
@@ -111,7 +119,7 @@ export function UsersPage() {
                       >
                         Xem chi tiết
                       </Link>
-                      {u.systemRole === 'EMPLOYEE' && (
+                      {isAdmin && u.systemRole === 'EMPLOYEE' && (
                         <Button
                           variant="secondary"
                           className="px-2 py-1 text-xs"
@@ -120,25 +128,26 @@ export function UsersPage() {
                           Đổi Custom Role
                         </Button>
                       )}
-                      {u.status !== 'LOCKED' ? (
-                        <Button
-                          variant="danger"
-                          className="px-2 py-1 text-xs"
-                          disabled={updateStatus.isPending}
-                          onClick={() => updateStatus.mutate({ id: u.id, status: 'LOCKED' })}
-                        >
-                          Khoá
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="secondary"
-                          className="px-2 py-1 text-xs"
-                          disabled={updateStatus.isPending}
-                          onClick={() => updateStatus.mutate({ id: u.id, status: 'ACTIVE' })}
-                        >
-                          Mở khoá
-                        </Button>
-                      )}
+                      {isAdmin &&
+                        (u.status !== 'LOCKED' ? (
+                          <Button
+                            variant="danger"
+                            className="px-2 py-1 text-xs"
+                            disabled={updateStatus.isPending}
+                            onClick={() => updateStatus.mutate({ id: u.id, status: 'LOCKED' })}
+                          >
+                            Khoá
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="secondary"
+                            className="px-2 py-1 text-xs"
+                            disabled={updateStatus.isPending}
+                            onClick={() => updateStatus.mutate({ id: u.id, status: 'ACTIVE' })}
+                          >
+                            Mở khoá
+                          </Button>
+                        ))}
                     </div>
                   </td>
                 </tr>

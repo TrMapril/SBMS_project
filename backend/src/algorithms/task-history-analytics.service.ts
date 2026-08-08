@@ -109,7 +109,14 @@ export class TaskHistoryAnalyticsService {
    * giả định này trong DECISIONS.md thay vì làm bảng phân loại theo từng State.
    */
   async getEmployeeMetrics(tenantId: string, userId: string) {
-    const [totalCompletedTasks, onTimeRows, returnRows, durations] = await Promise.all([
+    const [
+      totalCompletedTasks,
+      onTimeRows,
+      returnRows,
+      durations,
+      activeTaskCount,
+      riskAgg,
+    ] = await Promise.all([
       this.prisma.taskHistory.count({
         where: { task: { tenantId, assigneeId: userId }, toState: { isEnd: true } },
       }),
@@ -128,6 +135,18 @@ export class TaskHistoryAnalyticsService {
         },
       }),
       this.computeDwellDurations({ tenantId, assigneeId: userId }),
+      // Phase 7.5 Đợt 3 (bổ sung sau test tay) — điểm tải công việc hiện tại, dùng lại ĐÚNG công
+      // thức W1 của Thuật toán 1 (`AssignmentSuggestionService.computeWorkloadScores`): Task đang
+      // active (current state chưa is_end) của assignee, điểm = 1/(1+count).
+      this.prisma.task.count({
+        where: { tenantId, assigneeId: userId, currentState: { isEnd: false } },
+      }),
+      // Risk score trung bình (Thuật toán 2) của các Task đang active — task đã khoá không còn
+      // được tính risk_score (Giai đoạn 5), nên chỉ cần lọc chưa completed.
+      this.prisma.task.aggregate({
+        where: { tenantId, assigneeId: userId, completedAt: null, riskScore: { not: null } },
+        _avg: { riskScore: true },
+      }),
     ]);
 
     const onTimeCount = onTimeRows.filter(
@@ -142,6 +161,8 @@ export class TaskHistoryAnalyticsService {
       onTimeRate: onTimeRows.length > 0 ? onTimeCount / onTimeRows.length : null,
       returnCount,
       avgProcessingHours: this.average(durations),
+      currentWorkloadScore: 1 / (1 + activeTaskCount),
+      avgActiveRiskScore: riskAgg._avg.riskScore,
     };
   }
 }

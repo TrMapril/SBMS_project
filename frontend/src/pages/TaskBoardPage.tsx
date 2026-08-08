@@ -1,19 +1,35 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { useParams } from 'react-router-dom'
-import { useProject } from '../features/projects/useProjects'
+import { useProject, useProjectMembers } from '../features/projects/useProjects'
 import { useWorkflow } from '../features/workflow/useWorkflows'
-import { useCreateTask, useTasks, useTransitionTask } from '../features/tasks/useTasks'
+import {
+  useCancelTask,
+  useConfirmDone,
+  useCreateTask,
+  useRejectDone,
+  useReportDone,
+  useTasks,
+  useTransitionTask,
+  useUpdateTaskAssignee,
+} from '../features/tasks/useTasks'
+import { useCreateLeaveRequest, useLeaveRequests } from '../features/leave-requests/useLeaveRequests'
 import { useMyRoles } from '../features/roles/useRoles'
-import { useUsers } from '../features/users/useUsers'
 import { useCustomFields } from '../features/custom-fields/useCustomFields'
 import { useAssignmentSuggestions } from '../features/algorithms/useAlgorithms'
 import { useAuthStore } from '../store/auth.store'
 import { ApiError } from '../lib/api-client'
-import type { Task, TaskPriority, WorkflowState, WorkflowTransition } from '../lib/types'
+import type {
+  ProjectMember,
+  Task,
+  TaskPriority,
+  WorkflowState,
+  WorkflowTransition,
+} from '../lib/types'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
 import { Select } from '../components/ui/Select'
 import { Modal } from '../components/ui/Modal'
+import { Textarea } from '../components/ui/Textarea'
 import { ErrorBanner } from '../components/ui/ErrorBanner'
 import { Spinner } from '../components/ui/Spinner'
 
@@ -45,16 +61,34 @@ export function TaskBoardPage() {
   )
   const { data: tasksPage, isLoading: loadingTasks, error: tasksError } = useTasks(projectId)
   const { data: myRoles } = useMyRoles()
-  const { data: users } = useUsers()
+  // Phase 7.5 Đợt 3 (fix bug sau test tay) — assignee CHỈ được là project_members của đúng
+  // project này, không phải toàn bộ user trong tenant như trước.
+  const { data: members } = useProjectMembers(projectId)
   const { data: customFields } = useCustomFields()
+  // Phase 7.5 Đợt 3 (fix UX sau test tay) — biết Task nào đang có đơn TASK_RETURN ở trạng thái
+  // PENDING để disable đúng nút "Trả task", tránh Employee bấm gửi trùng (đã bị chặn ở BE nhưng
+  // UI cũ không phản ánh, gây hiểu lầm là chưa gửi được). Employee gọi endpoint này chỉ thấy ĐÚNG
+  // đơn của chính mình (BE tự lọc), Manager/Admin thấy toàn bộ — cả 2 trường hợp đều đủ để tra
+  // đúng theo `taskId` vì mỗi Task chỉ có tối đa 1 đơn TASK_RETURN đang PENDING tại 1 thời điểm
+  // (BE đã chặn tạo trùng).
+  const { data: pendingReturns } = useLeaveRequests('PENDING', 'TASK_RETURN')
   const isManager = useAuthStore((s) => s.user?.systemRole === 'MANAGER')
+  const isAdmin = useAuthStore((s) => s.user?.systemRole === 'ADMIN')
+  const currentUserId = useAuthStore((s) => s.user?.id)
   const [showCreate, setShowCreate] = useState(false)
   const [actionError, setActionError] = useState<unknown>(null)
 
   const myRoleIds = useMemo(() => new Set((myRoles ?? []).map((r) => r.id)), [myRoles])
   const usersById = useMemo(
-    () => new Map((users?.data ?? []).map((u) => [u.id, u])),
-    [users],
+    () => new Map((members ?? []).flatMap((m) => (m.user ? [[m.user.id, m.user] as const] : []))),
+    [members],
+  )
+  const pendingReturnTaskIds = useMemo(
+    () =>
+      new Set(
+        (pendingReturns?.data ?? []).flatMap((r) => (r.taskId ? [r.taskId] : [])),
+      ),
+    [pendingReturns],
   )
   const customFieldNamesById = useMemo(
     () => new Map((customFields?.data ?? []).map((f) => [f.id, f.name])),
@@ -93,6 +127,11 @@ export function TaskBoardPage() {
             tasks={tasks.filter((t) => t.currentStateId === state.id)}
             transitions={workflow.transitions}
             myRoleIds={myRoleIds}
+            currentUserId={currentUserId}
+            isManager={!!isManager}
+            canManageAssignee={!!isManager || !!isAdmin}
+            members={members ?? []}
+            pendingReturnTaskIds={pendingReturnTaskIds}
             assigneeName={(id) => usersById.get(id ?? '')?.fullName}
             onError={(error) => setActionError(translateCustomFieldError(error, customFieldNamesById))}
           />
@@ -100,7 +139,7 @@ export function TaskBoardPage() {
       </div>
 
       {showCreate && project && (
-        <CreateTaskModal projectId={project.id} onClose={() => setShowCreate(false)} />
+        <CreateTaskModal projectId={project.id} members={members ?? []} onClose={() => setShowCreate(false)} />
       )}
     </div>
   )
@@ -112,6 +151,11 @@ function KanbanColumn({
   tasks,
   transitions,
   myRoleIds,
+  currentUserId,
+  isManager,
+  canManageAssignee,
+  members,
+  pendingReturnTaskIds,
   assigneeName,
   onError,
 }: {
@@ -120,6 +164,11 @@ function KanbanColumn({
   tasks: Task[]
   transitions: WorkflowTransition[]
   myRoleIds: Set<string>
+  currentUserId: string | undefined
+  isManager: boolean
+  canManageAssignee: boolean
+  members: ProjectMember[]
+  pendingReturnTaskIds: Set<string>
   assigneeName: (id: string | null) => string | undefined
   onError: (error: unknown) => void
 }) {
@@ -138,6 +187,12 @@ function KanbanColumn({
             task={task}
             transitions={outgoing}
             myRoleIds={myRoleIds}
+            isEndState={state.isEnd}
+            currentUserId={currentUserId}
+            isManager={isManager}
+            canManageAssignee={canManageAssignee}
+            members={members}
+            hasPendingReturn={pendingReturnTaskIds.has(task.id)}
             assigneeName={assigneeName(task.assigneeId)}
             onError={onError}
           />
@@ -152,6 +207,12 @@ function TaskCard({
   task,
   transitions,
   myRoleIds,
+  isEndState,
+  currentUserId,
+  isManager,
+  canManageAssignee,
+  members,
+  hasPendingReturn,
   assigneeName,
   onError,
 }: {
@@ -159,10 +220,23 @@ function TaskCard({
   task: Task
   transitions: WorkflowTransition[]
   myRoleIds: Set<string>
+  isEndState: boolean
+  currentUserId: string | undefined
+  isManager: boolean
+  canManageAssignee: boolean
+  members: ProjectMember[]
+  hasPendingReturn: boolean
   assigneeName?: string
   onError: (error: unknown) => void
 }) {
   const transitionTask = useTransitionTask(projectId)
+  const reportDone = useReportDone(projectId)
+  const confirmDone = useConfirmDone(projectId)
+  const rejectDone = useRejectDone(projectId)
+  const cancelTask = useCancelTask(projectId)
+  const [showReturnModal, setShowReturnModal] = useState(false)
+  const [showReassignModal, setShowReassignModal] = useState(false)
+  const isAssignee = !!currentUserId && task.assigneeId === currentUserId
 
   function canUse(transition: WorkflowTransition) {
     return (
@@ -179,6 +253,27 @@ function TaskCard({
     )
   }
 
+  function handleReportDone() {
+    onError(null)
+    reportDone.mutate(task.id, { onError })
+  }
+
+  function handleConfirmDone() {
+    onError(null)
+    confirmDone.mutate(task.id, { onError })
+  }
+
+  function handleRejectDone() {
+    onError(null)
+    rejectDone.mutate(task.id, { onError })
+  }
+
+  function handleCancelTask() {
+    if (!window.confirm(`Huỷ Task "${task.title}"? Không thể hoàn tác.`)) return
+    onError(null)
+    cancelTask.mutate(task.id, { onError })
+  }
+
   return (
     <div className="rounded-md border border-gray-200 bg-white p-3 shadow-sm">
       <div className="mb-1 flex items-start justify-between gap-2">
@@ -191,6 +286,17 @@ function TaskCard({
       </div>
       <p className="text-xs text-gray-400">
         {assigneeName ? `Giao cho: ${assigneeName}` : 'Chưa có assignee'}
+        {/* Phase 7.5 Đợt 3 (fix UX sau test tay) — chỉ hiện link đổi nhỏ khi ĐÃ có assignee; khi
+            chưa có (vd sau khi Reset Task) thì hiện hẳn 1 nút rõ ràng ở khu vực action bên dưới
+            (xem `!assigneeName` block) thay vì chỉ 1 link nhỏ dễ bị bỏ sót. */}
+        {assigneeName && canManageAssignee && !task.completedAt && !task.cancelledAt && (
+          <button
+            onClick={() => setShowReassignModal(true)}
+            className="ml-1 text-indigo-500 hover:underline"
+          >
+            (Đổi)
+          </button>
+        )}
       </p>
       {task.deadline && (
         <p className="text-xs text-gray-400">
@@ -212,44 +318,250 @@ function TaskCard({
         </span>
       )}
 
-      {transitions.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1">
-          {transitions.map((t) => {
-            const allowed = canUse(t)
-            return (
+      {task.completedAt ? (
+        <p className="mt-2 rounded bg-gray-100 px-2 py-1 text-[11px] font-medium text-gray-500">
+          🔒 Đã hoàn thành, khoá vĩnh viễn
+        </p>
+      ) : task.cancelledAt ? (
+        <p className="mt-2 rounded bg-gray-100 px-2 py-1 text-[11px] font-medium text-gray-500">
+          ❌ Đã huỷ, khoá vĩnh viễn
+        </p>
+      ) : (
+        <>
+          {transitions.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {transitions.map((t) => {
+                const allowed = canUse(t)
+                return (
+                  <button
+                    key={t.id}
+                    disabled={!allowed || transitionTask.isPending}
+                    title={allowed ? undefined : 'Custom Role của bạn không có quyền transition này'}
+                    onClick={() => handleTransition(t.id)}
+                    className={`rounded px-2 py-1 text-xs font-medium ${
+                      allowed
+                        ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
+                        : 'cursor-not-allowed bg-gray-100 text-gray-300'
+                    }`}
+                  >
+                    {t.name}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Phase 7.5 Đợt 1 mục B — Report Done (assignee, chỉ khi State hiện tại is_end) /
+              Xác nhận Done (Manager). Đợt 1 mục D — Trả task (assignee). Đợt 3 (bổ sung sau test
+              tay) — "Trả lại" (Manager thấy chưa đạt, hoàn về đúng State trước đó). */}
+          <div className="mt-2 flex flex-wrap gap-1 border-t border-gray-100 pt-2">
+            {task.pendingDoneConfirmation ? (
+              isManager ? (
+                <>
+                  <button
+                    disabled={confirmDone.isPending}
+                    onClick={handleConfirmDone}
+                    className="rounded bg-green-50 px-2 py-1 text-xs font-medium text-green-700 hover:bg-green-100"
+                  >
+                    Xác nhận Done
+                  </button>
+                  <button
+                    disabled={rejectDone.isPending}
+                    onClick={handleRejectDone}
+                    className="rounded bg-red-50 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100"
+                  >
+                    Trả lại
+                  </button>
+                </>
+              ) : (
+                <span className="text-[11px] text-gray-400">Đang chờ Manager xác nhận Done</span>
+              )
+            ) : (
+              isAssignee &&
+              isEndState && (
+                <button
+                  disabled={reportDone.isPending}
+                  onClick={handleReportDone}
+                  className="rounded bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100"
+                >
+                  Report Done
+                </button>
+              )
+            )}
+            {isAssignee && !task.pendingDoneConfirmation && (
+              // Phase 7.5 Đợt 3 (fix UX sau test tay) — trước đây nút này KHÔNG đổi trạng thái
+              // sau khi đã gửi, Employee bấm lại được (bị chặn ở BE nhưng trải nghiệm gây hiểu
+              // lầm là chưa gửi thành công). Giờ đổi hẳn label + disable khi đã có 1 đơn
+              // TASK_RETURN đang PENDING cho đúng Task này (rõ ràng hơn tooltip-only).
+              hasPendingReturn ? (
+                <button
+                  disabled
+                  title="Yêu cầu trả task đang chờ Manager duyệt"
+                  className="cursor-not-allowed rounded bg-gray-100 px-2 py-1 text-xs font-medium text-gray-400"
+                >
+                  Đang chờ duyệt trả task
+                </button>
+              ) : (
+                <button
+                  onClick={() => setShowReturnModal(true)}
+                  className="rounded bg-orange-50 px-2 py-1 text-xs font-medium text-orange-700 hover:bg-orange-100"
+                >
+                  Trả task
+                </button>
+              )
+            )}
+            {/* Phase 7.5 Đợt 3 (bổ sung sau test tay) — Manager huỷ Task, loại khỏi mẫu số %
+                hoàn thành Project. */}
+            {isManager && !task.pendingDoneConfirmation && (
               <button
-                key={t.id}
-                disabled={!allowed || transitionTask.isPending}
-                title={allowed ? undefined : 'Custom Role của bạn không có quyền transition này'}
-                onClick={() => handleTransition(t.id)}
-                className={`rounded px-2 py-1 text-xs font-medium ${
-                  allowed
-                    ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
-                    : 'cursor-not-allowed bg-gray-100 text-gray-300'
-                }`}
+                disabled={cancelTask.isPending}
+                onClick={handleCancelTask}
+                className="rounded bg-gray-100 px-2 py-1 text-xs font-medium text-gray-500 hover:bg-gray-200"
               >
-                {t.name}
+                Huỷ Task
               </button>
-            )
-          })}
-        </div>
+            )}
+            {/* Phase 7.5 Đợt 3 (fix UX sau test tay) — Task chưa/không còn assignee (vd sau khi
+                Manager Reset 1 đơn trả task) phải LUÔN có cách gán người mới ngay trên Task Board,
+                không để Task "mồ côi" không ai thao tác tiếp được. Nút chính, rõ ràng hơn hẳn link
+                "(Đổi)" nhỏ ở dòng tên assignee (chỉ dùng khi ĐÃ có assignee). */}
+            {canManageAssignee && !task.assigneeId && !task.pendingDoneConfirmation && (
+              <button
+                onClick={() => setShowReassignModal(true)}
+                className="rounded bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
+              >
+                + Chọn assignee
+              </button>
+            )}
+          </div>
+        </>
+      )}
+
+      {showReturnModal && (
+        <TaskReturnModal
+          taskId={task.id}
+          taskTitle={task.title}
+          onClose={() => setShowReturnModal(false)}
+        />
+      )}
+      {showReassignModal && (
+        <ReassignModal
+          projectId={projectId}
+          taskId={task.id}
+          taskTitle={task.title}
+          currentAssigneeId={task.assigneeId}
+          members={members}
+          onClose={() => setShowReassignModal(false)}
+        />
       )}
     </div>
   )
 }
 
-function CreateTaskModal({
+/** Phase 7.5 Đợt 1 mục D — Employee (assignee) "trả task" đang giao cho mình kèm lý do, tạo đơn
+ * `type=TASK_RETURN`. Manager xem + phê duyệt phù hợp/không phù hợp ở trang Đơn từ. */
+function TaskReturnModal({
+  taskId,
+  taskTitle,
+  onClose,
+}: {
+  taskId: string
+  taskTitle: string
+  onClose: () => void
+}) {
+  const [reason, setReason] = useState('')
+  const createLeaveRequest = useCreateLeaveRequest()
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    createLeaveRequest.mutate(
+      { type: 'TASK_RETURN', taskId, reason },
+      { onSuccess: onClose },
+    )
+  }
+
+  return (
+    <Modal title={`Trả task — ${taskTitle}`} onClose={onClose}>
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <div>
+          <label className="mb-1 block text-sm font-medium text-gray-700">Lý do trả task</label>
+          <Textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} required />
+        </div>
+        <p className="text-xs text-gray-400">
+          Manager sẽ xem lý do và đánh giá phù hợp/không phù hợp. Nếu "không phù hợp", việc này sẽ
+          được tính vào hồ sơ năng lực của bạn.
+        </p>
+        {createLeaveRequest.isError && <ErrorBanner error={createLeaveRequest.error} />}
+        <Button type="submit" className="w-full" disabled={createLeaveRequest.isPending}>
+          {createLeaveRequest.isPending ? 'Đang gửi...' : 'Gửi yêu cầu trả task'}
+        </Button>
+      </form>
+    </Modal>
+  )
+}
+
+/** Phase 7.5 Đợt 3 (bổ sung sau test tay) — Manager/Admin đổi assignee của Task đang active, chỉ
+ * chọn được trong số `project_members` của đúng project đó (đúng bug đã sửa ở dropdown tạo Task). */
+function ReassignModal({
   projectId,
+  taskId,
+  taskTitle,
+  currentAssigneeId,
+  members,
   onClose,
 }: {
   projectId: string
+  taskId: string
+  taskTitle: string
+  currentAssigneeId: string | null
+  members: ProjectMember[]
+  onClose: () => void
+}) {
+  const [assigneeId, setAssigneeId] = useState(currentAssigneeId ?? '')
+  const updateAssignee = useUpdateTaskAssignee(projectId)
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (!assigneeId) return
+    updateAssignee.mutate({ taskId, assigneeId }, { onSuccess: onClose })
+  }
+
+  return (
+    <Modal title={`Đổi assignee — ${taskTitle}`} onClose={onClose}>
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <div>
+          <label className="mb-1 block text-sm font-medium text-gray-700">Assignee mới</label>
+          <Select value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)} required>
+            <option value="">-- Chọn thành viên --</option>
+            {members.map((m) => (
+              <option key={m.userId} value={m.userId}>
+                {m.user?.fullName ?? m.userId}
+              </option>
+            ))}
+          </Select>
+        </div>
+        {updateAssignee.isError && <ErrorBanner error={updateAssignee.error} />}
+        <Button type="submit" className="w-full" disabled={updateAssignee.isPending || !assigneeId}>
+          {updateAssignee.isPending ? 'Đang lưu...' : 'Đổi assignee'}
+        </Button>
+      </form>
+    </Modal>
+  )
+}
+
+function CreateTaskModal({
+  projectId,
+  members,
+  onClose,
+}: {
+  projectId: string
+  members: ProjectMember[]
   onClose: () => void
 }) {
   const [title, setTitle] = useState('')
   const [priority, setPriority] = useState<TaskPriority>('MEDIUM')
   const [assigneeId, setAssigneeId] = useState('')
   const [deadline, setDeadline] = useState('')
-  const { data: users } = useUsers()
   const { data: customFields } = useCustomFields()
   const [customValues, setCustomValues] = useState<Record<string, string>>({})
   const createTask = useCreateTask(projectId)
@@ -307,9 +619,9 @@ function CreateTaskModal({
           <label className="mb-1 block text-sm font-medium text-gray-700">Assignee</label>
           <Select value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)}>
             <option value="">-- Không giao --</option>
-            {users?.data.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.fullName}
+            {members.map((m) => (
+              <option key={m.userId} value={m.userId}>
+                {m.user?.fullName ?? m.userId}
               </option>
             ))}
           </Select>

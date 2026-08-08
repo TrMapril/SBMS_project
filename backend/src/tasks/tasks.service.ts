@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -12,6 +13,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { TransitionTaskDto } from './dto/transition-task.dto';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { AssignCustomFieldValuesDto } from './dto/assign-custom-field-values.dto';
+import { UpdateTaskAssigneeDto } from './dto/update-task-assignee.dto';
 import { ListTasksQueryDto } from './dto/list-tasks-query.dto';
 import type { JwtPayload } from '../common/types/jwt-payload.type';
 
@@ -180,15 +182,16 @@ export class TasksService {
   async transition(
     tenantId: string,
     taskId: string,
-    userId: string,
+    requester: JwtPayload,
     dto: TransitionTaskDto,
   ) {
+    const userId = requester.userId;
     // Phase 7.5 Đợt 1 mục B — Task đã khoá (completed_at) thì KHÔNG được đi qua
     // WorkflowEngineService nữa, chặn ngay tại đây (đúng "không cho qua WorkflowEngineService"
     // trong phase_7_5.md — đây là ràng buộc Task-level, không phải logic Workflow Engine).
     const task = await this.prisma.task.findFirst({
       where: { id: taskId, tenantId },
-      select: { completedAt: true },
+      select: { completedAt: true, cancelledAt: true },
     });
     if (!task) {
       throw new NotFoundException('Không tìm thấy Task');
@@ -198,11 +201,15 @@ export class TasksService {
         'Task đã hoàn thành và bị khoá, không thể chuyển trạng thái',
       );
     }
+    if (task.cancelledAt) {
+      throw new BadRequestException('Task đã bị huỷ và bị khoá, không thể chuyển trạng thái');
+    }
 
     return this.workflowEngine.transition({
       tenantId,
       taskId,
       userId,
+      requesterSystemRole: requester.systemRole,
       transitionId: dto.transitionId,
       expectedVersion: dto.version,
       comment: dto.comment,
@@ -225,6 +232,9 @@ export class TasksService {
     }
     if (task.completedAt) {
       throw new BadRequestException('Task đã hoàn thành và bị khoá');
+    }
+    if (task.cancelledAt) {
+      throw new BadRequestException('Task đã bị huỷ và bị khoá');
     }
     if (!task.currentState.isEnd) {
       throw new BadRequestException(
@@ -257,6 +267,117 @@ export class TasksService {
     const updated = await this.prisma.task.update({
       where: { id: taskId },
       data: { completedAt: new Date(), pendingDoneConfirmation: false },
+    });
+    await this.projectsService.maybeCompleteProject(task.projectId);
+    return updated;
+  }
+
+  /** Phase 7.5 Đợt 3 (bổ sung sau test tay) — Manager thấy chưa đạt, "Trả lại" thay vì "Xác nhận
+   * Done": Task hoàn về ĐÚNG State ngay trước đó (lấy từ dòng task_history gần nhất của Task —
+   * chính là dòng đã đưa Task tới State is_end hiện tại), gỡ cờ chờ xác nhận, KHÔNG khoá Task.
+   * Khác với "Trả task"/Reset (đã có từ Đợt 1) vốn đưa hẳn về State bắt đầu (is_start) — ở đây chỉ
+   * lùi lại đúng 1 bước để Employee sửa tiếp, không mất toàn bộ tiến độ trước đó. */
+  async rejectDone(tenantId: string, taskId: string, managerId: string) {
+    const task = await this.prisma.task.findFirst({ where: { id: taskId, tenantId } });
+    if (!task) {
+      throw new NotFoundException('Không tìm thấy Task');
+    }
+    if (!task.pendingDoneConfirmation) {
+      throw new BadRequestException('Task chưa được assignee Report Done');
+    }
+
+    const lastHistory = await this.prisma.taskHistory.findFirst({
+      where: { taskId },
+      orderBy: { actionAt: 'desc' },
+      include: { fromState: { select: { id: true, name: true } } },
+    });
+    if (!lastHistory?.fromState) {
+      throw new BadRequestException(
+        'Không tìm thấy lịch sử chuyển trạng thái để hoàn Task về bước trước đó',
+      );
+    }
+    const previousState = lastHistory.fromState;
+
+    await this.prisma.$transaction(async (tx) => {
+      const updateResult = await tx.task.updateMany({
+        where: { id: taskId, version: task.version },
+        data: {
+          currentStateId: previousState.id,
+          pendingDoneConfirmation: false,
+          version: { increment: 1 },
+        },
+      });
+      if (updateResult.count === 0) {
+        throw new ConflictException('Task đã bị thay đổi bởi thao tác khác, thử lại');
+      }
+      await tx.taskHistory.create({
+        data: {
+          taskId,
+          fromStateId: task.currentStateId,
+          toStateId: previousState.id,
+          transitionId: null,
+          actionBy: managerId,
+          comment: `Manager từ chối Report Done, hoàn về "${previousState.name}"`,
+        },
+      });
+    });
+
+    return this.prisma.task.findUniqueOrThrow({ where: { id: taskId } });
+  }
+
+  /** Phase 7.5 Đợt 3 (bổ sung sau test tay) — Manager/Admin đổi assignee của Task đang active
+   * (chưa khoá), chỉ được chọn trong số `project_members` của đúng Project đó. Không ghi
+   * `task_history` (đây không phải 1 lượt chuyển trạng thái — Mục 3.11 CLAUDE.md chỉ bắt buộc ghi
+   * cho transition). Người được tính "hoàn thành Task" là assignee TẠI THỜI ĐIỂM Task bị khoá
+   * (Report Done + Xác nhận Done), không quan tâm lịch sử đã qua tay ai trước đó — vì mọi truy vấn
+   * phân tích (Thuật toán 1/2, hồ sơ năng lực) đều lọc theo `tasks.assignee_id` hiện tại chứ không
+   * phải `task_history.action_by`, nên hành vi này tự nhiên đúng mà không cần thêm logic riêng. */
+  async updateAssignee(tenantId: string, taskId: string, dto: UpdateTaskAssigneeDto) {
+    const task = await this.prisma.task.findFirst({ where: { id: taskId, tenantId } });
+    if (!task) {
+      throw new NotFoundException('Không tìm thấy Task');
+    }
+    if (task.completedAt) {
+      throw new BadRequestException('Task đã hoàn thành và bị khoá, không thể đổi assignee');
+    }
+    if (task.cancelledAt) {
+      throw new BadRequestException('Task đã bị huỷ và bị khoá, không thể đổi assignee');
+    }
+    const member = await this.prisma.projectMember.findUnique({
+      where: { projectId_userId: { projectId: task.projectId, userId: dto.assigneeId } },
+    });
+    if (!member) {
+      throw new BadRequestException('User không phải thành viên của Project này');
+    }
+
+    const updated = await this.prisma.task.update({
+      where: { id: taskId },
+      data: { assigneeId: dto.assigneeId },
+    });
+    await this.notifyTaskAssigned(tenantId, updated);
+    return updated;
+  }
+
+  /** Phase 7.5 Đợt 3 (bổ sung sau test tay) — Manager "Huỷ" 1 Task. Khoá vĩnh viễn như
+   * `completedAt` (không transition/đổi assignee được nữa) nhưng KHÔNG tính là hoàn thành — chỉ
+   * loại trừ khỏi mẫu số khi tính % hoàn thành Project (đúng yêu cầu: Project completed khi mọi
+   * Task ĐÃ ĐƯỢC XÁC NHẬN DONE, trừ Task đã huỷ — xem `ProjectsService.getCompletionStats`). Sau
+   * khi huỷ, Task huỷ có thể là Task cuối cùng còn PENDING của Project nên cũng cần kiểm tra lại
+   * khả năng tự chuyển COMPLETED, giống hệt `confirmDone`. */
+  async cancelTask(tenantId: string, taskId: string) {
+    const task = await this.prisma.task.findFirst({ where: { id: taskId, tenantId } });
+    if (!task) {
+      throw new NotFoundException('Không tìm thấy Task');
+    }
+    if (task.completedAt) {
+      throw new BadRequestException('Task đã hoàn thành, không thể huỷ');
+    }
+    if (task.cancelledAt) {
+      throw new BadRequestException('Task đã bị huỷ trước đó');
+    }
+    const updated = await this.prisma.task.update({
+      where: { id: taskId },
+      data: { cancelledAt: new Date(), pendingDoneConfirmation: false },
     });
     await this.projectsService.maybeCompleteProject(task.projectId);
     return updated;

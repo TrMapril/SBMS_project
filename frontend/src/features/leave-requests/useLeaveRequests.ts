@@ -66,3 +66,17 @@ export function useResolveLeaveRequest() {
     },
   })
 }
+
+/** Phase 7.5 Đợt 1 mục D / Đợt 3 — Manager "Reset" 1 đơn TASK_RETURN đã resolve: Task về State
+ * is_start, gỡ assignee. Chỉ áp dụng 1 lần cho mỗi đơn (chặn ở backend qua `taskResetAt`). */
+export function useResetTask() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (leaveRequestId: string) =>
+      apiClient.post(`/leave-requests/${leaveRequestId}/reset-task`),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEY })
+      void queryClient.invalidateQueries({ queryKey: ['tasks'] })
+    },
+  })
+}

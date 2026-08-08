@@ -48,21 +48,44 @@ export class ProjectsService {
     return workflow;
   }
 
-  async create(tenantId: string, dto: CreateProjectDto) {
+  /** Phase 7.5 Đợt 3 — Manager tạo project tự động trở thành thành viên ngay lúc tạo, không cần
+   * thao tác "Thêm nhân sự" riêng cho chính mình. */
+  async create(tenantId: string, managerId: string, dto: CreateProjectDto) {
     await this.assertWorkflowInTenant(tenantId, dto.workflowId);
     return this.prisma.project.create({
-      data: { tenantId, name: dto.name, workflowId: dto.workflowId },
+      data: {
+        tenantId,
+        name: dto.name,
+        workflowId: dto.workflowId,
+        members: { create: { userId: managerId } },
+      },
     });
   }
 
   /** Phase 7.5 Đợt 2 — trang Quản lý dự án Admin (read-only) cần workflow/số thành viên/số Task/%
    * hoàn thành ngay trên bảng liệt kê, không phải mở từng project mới thấy (khác `findOne` vốn
-   * chỉ 1 project). */
-  async findAll(tenantId: string, pagination: PaginationQueryDto) {
+   * chỉ 1 project).
+   * Phase 7.5 Đợt 3 (fix bug sau test tay) — Employee CHỈ được thấy Project mà họ là
+   * `project_members` HOẶC đang có Task được giao trong đó (đúng logic đã có sẵn ở
+   * `assertEmployeeCanAccessProject`, trước đây chỉ áp dụng lúc mở 1 Project cụ thể, chưa lọc ở
+   * danh sách — khiến Employee thấy đủ mọi Project trong tenant rồi mới báo lỗi 403 khi bấm vào,
+   * thay vì không thấy ngay từ đầu). Admin/Manager không bị lọc, xem toàn bộ Project trong tenant. */
+  async findAll(tenantId: string, pagination: PaginationQueryDto, requester?: JwtPayload) {
     const { page, limit } = pagination;
+    const employeeScope: Prisma.ProjectWhereInput =
+      requester?.systemRole === 'EMPLOYEE'
+        ? {
+            OR: [
+              { members: { some: { userId: requester.userId } } },
+              { tasks: { some: { assigneeId: requester.userId } } },
+            ],
+          }
+        : {};
+    const where: Prisma.ProjectWhereInput = { tenantId, ...employeeScope };
+
     const [projects, total] = await this.prisma.$transaction([
       this.prisma.project.findMany({
-        where: { tenantId },
+        where,
         skip: (page - 1) * limit,
         take: limit,
         orderBy: { createdAt: 'desc' },
@@ -71,25 +94,39 @@ export class ProjectsService {
           _count: { select: { members: true, tasks: true } },
         },
       }),
-      this.prisma.project.count({ where: { tenantId } }),
+      this.prisma.project.count({ where }),
     ]);
 
-    const completedCounts = await this.prisma.task.groupBy({
-      by: ['projectId'],
-      where: { projectId: { in: projects.map((p) => p.id) }, completedAt: { not: null } },
-      _count: { _all: true },
-    });
+    const [completedCounts, cancelledCounts] = await Promise.all([
+      this.prisma.task.groupBy({
+        by: ['projectId'],
+        where: { projectId: { in: projects.map((p) => p.id) }, completedAt: { not: null } },
+        _count: { _all: true },
+      }),
+      this.prisma.task.groupBy({
+        by: ['projectId'],
+        where: { projectId: { in: projects.map((p) => p.id) }, cancelledAt: { not: null } },
+        _count: { _all: true },
+      }),
+    ]);
     const completedByProject = new Map(completedCounts.map((c) => [c.projectId, c._count._all]));
+    const cancelledByProject = new Map(cancelledCounts.map((c) => [c.projectId, c._count._all]));
 
     const data = projects.map(({ _count, ...p }) => {
       const totalTasks = _count.tasks;
       const completedTasks = completedByProject.get(p.id) ?? 0;
+      const cancelledTasks = cancelledByProject.get(p.id) ?? 0;
+      // Phase 7.5 Đợt 3 (bổ sung sau test tay) — Task đã huỷ loại khỏi MẪU SỐ, không tính là
+      // "chưa xong" mãi mãi (nếu không, Project có Task bị huỷ sẽ không bao giờ đạt 100%).
+      const effectiveTotal = totalTasks - cancelledTasks;
       return {
         ...p,
         memberCount: _count.members,
         totalTasks,
         completedTasks,
-        completionPercent: totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0,
+        cancelledTasks,
+        completionPercent:
+          effectiveTotal > 0 ? Math.round((completedTasks / effectiveTotal) * 100) : 0,
       };
     });
     return { data, total, page, limit };
@@ -130,27 +167,37 @@ export class ProjectsService {
     return { ...project, ...stats };
   }
 
-  /** Phase 7.5 Đợt 1 mục B — % hoàn thành = (Task đã khoá completed_at) / (tổng Task) × 100. */
+  /** Phase 7.5 Đợt 1 mục B — % hoàn thành = (Task đã khoá completed_at) / (tổng Task) × 100.
+   * Phase 7.5 Đợt 3 (bổ sung sau test tay) — Task đã `cancelledAt` loại khỏi MẪU SỐ (không tính
+   * là "chưa xong" mãi mãi), theo đúng yêu cầu: Project completed khi mọi Task ĐÃ ĐƯỢC XÁC NHẬN
+   * DONE, TRỪ Task đã huỷ. */
   async getCompletionStats(projectId: string) {
-    const [totalTasks, completedTasks] = await Promise.all([
+    const [totalTasks, completedTasks, cancelledTasks] = await Promise.all([
       this.prisma.task.count({ where: { projectId } }),
       this.prisma.task.count({ where: { projectId, completedAt: { not: null } } }),
+      this.prisma.task.count({ where: { projectId, cancelledAt: { not: null } } }),
     ]);
+    const effectiveTotal = totalTasks - cancelledTasks;
     return {
       totalTasks,
       completedTasks,
-      completionPercent: totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0,
+      cancelledTasks,
+      completionPercent:
+        effectiveTotal > 0 ? Math.round((completedTasks / effectiveTotal) * 100) : 0,
     };
   }
 
-  /** Phase 7.5 Đợt 1 mục A — gọi sau mỗi lần 1 Task bị khoá (Manager "Xác nhận Done", xem
-   * TasksService.confirmDone). Chỉ tự chuyển COMPLETED khi project đang ACTIVE và có ít nhất 1
-   * Task (project 0 Task không tự hoàn thành). Không đụng CANCELLED/COMPLETED đã có sẵn. */
+  /** Phase 7.5 Đợt 1 mục A — gọi sau mỗi lần 1 Task bị khoá (Manager "Xác nhận Done"/"Huỷ Task",
+   * xem TasksService.confirmDone/cancelTask). Chỉ tự chuyển COMPLETED khi project đang ACTIVE và
+   * có ít nhất 1 Task CHƯA HUỶ (project 0 Task hoặc toàn bộ Task đã huỷ không tự hoàn thành —
+   * tránh "đúng vô nghĩa" khi mẫu số bằng 0). Không đụng CANCELLED/COMPLETED đã có sẵn. */
   async maybeCompleteProject(projectId: string) {
     const project = await this.prisma.project.findUnique({ where: { id: projectId } });
     if (!project || project.status !== 'ACTIVE') return;
-    const { totalTasks, completedTasks } = await this.getCompletionStats(projectId);
-    if (totalTasks > 0 && totalTasks === completedTasks) {
+    const { totalTasks, completedTasks, cancelledTasks } =
+      await this.getCompletionStats(projectId);
+    const effectiveTotal = totalTasks - cancelledTasks;
+    if (effectiveTotal > 0 && effectiveTotal === completedTasks) {
       await this.prisma.project.update({
         where: { id: projectId },
         data: { status: 'COMPLETED' },
@@ -264,9 +311,11 @@ export class ProjectsService {
     }
   }
 
+  /** Phase 7.5 Đợt 3 — trang "nhân sự dự án" cần thêm Custom Role + số Task hoàn thành/được giao
+   * TRONG PROJECT NÀY cho từng thành viên, không phải chỉ danh sách thành viên trơn như trước. */
   async listMembers(tenantId: string, projectId: string, requester?: JwtPayload) {
     await this.findOne(tenantId, projectId, requester);
-    return this.prisma.projectMember.findMany({
+    const members = await this.prisma.projectMember.findMany({
       where: { projectId },
       include: {
         user: {
@@ -280,6 +329,40 @@ export class ProjectsService {
         },
       },
     });
+    const userIds = members.map((m) => m.userId);
+
+    const [userRoles, assignedCounts, completedCounts] = await Promise.all([
+      this.prisma.userRole.findMany({
+        where: { userId: { in: userIds } },
+        include: { role: { select: { id: true, name: true } } },
+      }),
+      this.prisma.task.groupBy({
+        by: ['assigneeId'],
+        where: { projectId, assigneeId: { in: userIds } },
+        _count: { _all: true },
+      }),
+      this.prisma.task.groupBy({
+        by: ['assigneeId'],
+        where: { projectId, assigneeId: { in: userIds }, completedAt: { not: null } },
+        _count: { _all: true },
+      }),
+    ]);
+
+    const rolesByUser = new Map<string, { id: string; name: string }[]>();
+    for (const ur of userRoles) {
+      const list = rolesByUser.get(ur.userId) ?? [];
+      list.push(ur.role);
+      rolesByUser.set(ur.userId, list);
+    }
+    const assignedByUser = new Map(assignedCounts.map((c) => [c.assigneeId, c._count._all]));
+    const completedByUser = new Map(completedCounts.map((c) => [c.assigneeId, c._count._all]));
+
+    return members.map((m) => ({
+      ...m,
+      customRoles: m.user.systemRole === 'EMPLOYEE' ? (rolesByUser.get(m.userId) ?? []) : [],
+      assignedTaskCount: assignedByUser.get(m.userId) ?? 0,
+      completedTaskCount: completedByUser.get(m.userId) ?? 0,
+    }));
   }
 
   /** Phase 7.5 Đợt 1 mục C — chỉ xoá được nếu chưa từng có Task nào ĐANG giao cho họ trong

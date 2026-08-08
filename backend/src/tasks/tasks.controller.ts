@@ -13,6 +13,7 @@ import { TasksService } from './tasks.service';
 import { TransitionTaskDto } from './dto/transition-task.dto';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { AssignCustomFieldValuesDto } from './dto/assign-custom-field-values.dto';
+import { UpdateTaskAssigneeDto } from './dto/update-task-assignee.dto';
 import { ListTasksQueryDto } from './dto/list-tasks-query.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -68,7 +69,7 @@ export class TasksController {
     @Param('id') id: string,
     @Body() dto: TransitionTaskDto,
   ) {
-    return this.tasksService.transition(tenantId, id, user.userId, dto);
+    return this.tasksService.transition(tenantId, id, user, dto);
   }
 
   // Không @Roles() — quyền xét theo "là assignee của Task" trong Service, không theo System Role.
@@ -85,5 +86,36 @@ export class TasksController {
   @Post(':id/confirm-done')
   confirmDone(@CurrentTenant() tenantId: string, @Param('id') id: string) {
     return this.tasksService.confirmDone(tenantId, id);
+  }
+
+  // Phase 7.5 Đợt 3 (bổ sung sau test tay) — Manager thấy Report Done chưa đạt, trả về đúng State
+  // trước đó thay vì xác nhận.
+  @Roles('MANAGER')
+  @Post(':id/reject-done')
+  rejectDone(
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+  ) {
+    return this.tasksService.rejectDone(tenantId, id, user.userId);
+  }
+
+  // Phase 7.5 Đợt 3 (bổ sung sau test tay) — đổi assignee, chỉ Manager/Admin.
+  @Roles('MANAGER', 'ADMIN')
+  @Patch(':id/assignee')
+  updateAssignee(
+    @CurrentTenant() tenantId: string,
+    @Param('id') id: string,
+    @Body() dto: UpdateTaskAssigneeDto,
+  ) {
+    return this.tasksService.updateAssignee(tenantId, id, dto);
+  }
+
+  // Phase 7.5 Đợt 3 (bổ sung sau test tay) — Manager huỷ 1 Task, loại trừ khỏi mẫu số % hoàn
+  // thành Project.
+  @Roles('MANAGER')
+  @Post(':id/cancel')
+  cancelTask(@CurrentTenant() tenantId: string, @Param('id') id: string) {
+    return this.tasksService.cancelTask(tenantId, id);
   }
 }

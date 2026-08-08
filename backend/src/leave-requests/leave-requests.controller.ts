@@ -32,6 +32,10 @@ import type { JwtPayload } from '../common/types/jwt-payload.type';
 export class LeaveRequestsController {
   constructor(private readonly leaveRequestsService: LeaveRequestsService) {}
 
+  // Phase 7.5 Đợt 3 — Manager không còn tự gửi đơn được nữa (chỉ Employee/Admin), khớp đúng vai
+  // trò "chỉ xem + duyệt" đã chốt ở "Quyết định nền tảng" #2. SUPER_ADMIN không thuộc tenant nào
+  // nên không bao giờ gọi tới route này, không cần liệt kê.
+  @Roles('ADMIN', 'EMPLOYEE')
   @Post()
   @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
   create(

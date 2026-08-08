@@ -16,10 +16,12 @@ interface NavItem {
 // - Đổi "Nhân sự" -> "Đề xuất nhân sự" vì đã tách "Hồ sơ năng lực" ra khỏi trang này — Hồ sơ năng
 //   lực của 1 Employee giờ CHỈ vào được qua nút "Xem chi tiết" ở trang Người dùng, không còn mục
 //   sidebar riêng để browse tự do.
+// Phase 7.5 Đợt 3 (bổ sung sau test tay) — Manager cũng thấy "Người dùng" (UsersPage.tsx tự ẩn
+// nút tạo/khoá/đổi role khi không phải Admin, chỉ xem + "Xem chi tiết").
 const NAV_ITEMS: NavItem[] = [
   { to: '/', label: 'Trang chủ', roles: ['ADMIN', 'MANAGER', 'EMPLOYEE'] },
   { to: '/workflows', label: 'Workflow', roles: ['ADMIN'] },
-  { to: '/users', label: 'Người dùng', roles: ['ADMIN'] },
+  { to: '/users', label: 'Người dùng', roles: ['ADMIN', 'MANAGER'] },
   { to: '/roles', label: 'Custom Role', roles: ['ADMIN'] },
   { to: '/custom-fields', label: 'Custom Fields', roles: ['ADMIN'] },
   { to: '/admin/projects', label: 'Quản lý dự án', roles: ['ADMIN'] },

@@ -141,6 +141,8 @@ export interface Project {
   memberCount?: number
   totalTasks?: number
   completedTasks?: number
+  /** Phase 7.5 Đợt 3 (bổ sung sau test tay) — loại khỏi mẫu số khi tính `completionPercent`. */
+  cancelledTasks?: number
   completionPercent?: number
 }
 
@@ -152,6 +154,10 @@ export interface ProjectMember {
   status: ProjectMemberStatus
   createdAt: string
   user?: Pick<User, 'id' | 'email' | 'fullName' | 'systemRole' | 'status'>
+  /** Phase 7.5 Đợt 3 — chỉ có ở response GET /projects/:id/members (trang nhân sự dự án). */
+  customRoles?: Pick<Role, 'id' | 'name'>[]
+  assignedTaskCount?: number
+  completedTaskCount?: number
 }
 
 export interface ProjectDetail extends Project {
@@ -216,6 +222,12 @@ export interface Task {
   deadline: string | null
   riskScore: number | null
   riskScoreUpdatedAt: string | null
+  /** Phase 7.5 Đợt 1 mục B — luồng Report Done (assignee) / Xác nhận Done (Manager). */
+  pendingDoneConfirmation: boolean
+  completedAt: string | null
+  /** Phase 7.5 Đợt 3 (bổ sung sau test tay) — Manager "Huỷ" Task, khoá vĩnh viễn như
+   * `completedAt` nhưng KHÔNG tính là hoàn thành, chỉ loại khỏi mẫu số % hoàn thành Project. */
+  cancelledAt: string | null
   createdAt: string
   updatedAt: string
   customFieldValues?: CustomFieldValue[]
@@ -368,6 +380,12 @@ export interface CompetencyAutoMetrics {
   /** Phase 7.5 Đợt 1 mục D — số lần đơn TASK_RETURN của user này bị Manager đánh giá "không phù
    * hợp" (toàn thời gian). */
   taskReturnRejectedCount: number
+  /** Phase 7.5 Đợt 3 (bổ sung sau test tay) — dùng lại đúng công thức W1 của Thuật toán 1 (Task
+   * đang active của assignee, điểm = 1/(1+count), càng gần 1 càng rảnh). */
+  currentWorkloadScore: number
+  /** Risk score trung bình (Thuật toán 2) của các Task đang active — `null` nếu chưa có Task nào
+   * được tính risk_score. */
+  avgActiveRiskScore: number | null
 }
 
 export interface CompetencyProfileEntry {
