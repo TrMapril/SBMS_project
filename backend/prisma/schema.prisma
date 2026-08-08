@@ -108,6 +108,11 @@ model Tenant {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  /// Phase 7.5 Đợt 4 — Super Admin vô hiệu hoá 1 tenant, chặn TOÀN BỘ user trong tenant đó đăng
+  /// nhập (kiểm tra ở AuthService.login, không phải guard riêng — vì đây là điều kiện dữ liệu,
+  /// không phải phân quyền route).
+  isDisabled Boolean @default(false) @map("is_disabled")
+
   config               TenantConfig?
   users                User[]
   roles                Role[]
@@ -158,6 +163,12 @@ model TenantConfig {
   contactPhone String? @map("contact_phone")
   contactEmail String? @map("contact_email")
   socialLinks  Json    @default("{}") @map("social_links")
+
+  /// Phase 7.5 Đợt 4 — tuỳ chỉnh background trang giới thiệu doanh nghiệp (màu HOẶC ảnh, Admin tự
+  /// chọn cái nào set thì FE ưu tiên ảnh nếu có cả 2). Không tạo bảng riêng, mở rộng ngay bảng này
+  /// đúng như cách Giai đoạn 7 đã làm cho introText/bannerImages.
+  landingBackgroundColor    String? @map("landing_background_color")
+  landingBackgroundImageUrl String? @map("landing_background_image_url")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 

@@ -8,6 +8,7 @@ import {
   useRecomputeRiskScores,
   useRiskAlerts,
 } from '../features/algorithms/useAlgorithms'
+import { useTenantStatsOverview } from '../features/tenants/useTenants'
 import { Button } from '../components/ui/Button'
 import { Select } from '../components/ui/Select'
 import { ErrorBanner } from '../components/ui/ErrorBanner'
@@ -22,14 +23,21 @@ const QUICK_LINKS: Record<string, { to: string; label: string }[]> = {
   ],
   MANAGER: [{ to: '/projects', label: 'Quản lý dự án' }],
   EMPLOYEE: [{ to: '/projects', label: 'Xem dự án của tôi' }],
+  SUPER_ADMIN: [{ to: '/tenants', label: 'Quản lý doanh nghiệp' }],
 }
 
 /** Phase 7.5 Đợt 2 — gộp "Trang chủ" và "Dashboard" cũ (2 trang riêng, Dashboard trống với
  * Employee vì bị chặn route) thành 1 trang duy nhất: quick links cho mọi role + cảnh báo
- * deadline/bottleneck chỉ hiện với Admin/Manager (nội dung y hệt DashboardPage cũ, không đổi). */
+ * deadline/bottleneck chỉ hiện với Admin/Manager (nội dung y hệt DashboardPage cũ, không đổi).
+ * Phase 7.5 Đợt 4 — Super Admin trước đây vào trang này chỉ thấy khung rỗng (không có quick link,
+ * không có dashboard section nào khớp role) — thêm hẳn dashboard số liệu toàn hệ thống riêng. */
 export function HomePage() {
   const user = useAuthStore((s) => s.user)
   if (!user) return null
+
+  if (user.systemRole === 'SUPER_ADMIN') {
+    return <SuperAdminDashboard fullName={user.fullName} />
+  }
 
   const showDashboardSections = user.systemRole === 'ADMIN' || user.systemRole === 'MANAGER'
 
@@ -60,6 +68,86 @@ export function HomePage() {
           <BottleneckSection />
         </div>
       )}
+    </div>
+  )
+}
+
+/** Phase 7.5 Đợt 4 — số liệu toàn hệ thống (mọi tenant cộng lại): tổng số tenant, tổng số user
+ * (không tính chính Super Admin, xem `TenantsService.getStatsOverview`), tổng số project, kèm
+ * biểu đồ đơn giản "tenant mới theo tháng" (tuỳ chọn theo phase_7_5.md, tận dụng `createdAt` sẵn
+ * có, không cần thêm cột/bảng nào). */
+function SuperAdminDashboard({ fullName }: { fullName: string }) {
+  const { data: stats, isLoading, error } = useTenantStatsOverview()
+  const maxMonthCount = Math.max(1, ...(stats?.newTenantsByMonth.map((m) => m.count) ?? [0]))
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-xl font-semibold text-gray-900">Chào {fullName}</h1>
+        <p className="mt-1 text-sm text-gray-500">
+          Vai trò hệ thống: <span className="font-medium">SUPER_ADMIN</span>
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {QUICK_LINKS.SUPER_ADMIN.map((link) => (
+          <Link
+            key={link.to}
+            to={link.to}
+            className="rounded-lg border border-gray-200 bg-white p-4 text-sm font-medium text-gray-700 shadow-sm hover:border-indigo-300 hover:text-indigo-700"
+          >
+            {link.label}
+          </Link>
+        ))}
+      </div>
+
+      {isLoading && <Spinner />}
+      {error && <ErrorBanner error={error} />}
+
+      {stats && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <StatCard label="Tổng số doanh nghiệp" value={stats.totalTenants} />
+            <StatCard label="Tổng số user" value={stats.totalUsers} />
+            <StatCard label="Tổng số project" value={stats.totalProjects} />
+          </div>
+
+          <div className="rounded-lg border border-gray-200 bg-white p-4">
+            <h2 className="mb-3 text-sm font-semibold text-gray-700">
+              Doanh nghiệp mới theo tháng
+            </h2>
+            {stats.newTenantsByMonth.length === 0 ? (
+              <p className="text-sm text-gray-400">Chưa có doanh nghiệp nào.</p>
+            ) : (
+              <div className="space-y-1.5">
+                {stats.newTenantsByMonth.map((m) => (
+                  <div key={m.month} className="flex items-center gap-2">
+                    <span className="w-20 shrink-0 text-xs text-gray-600">{m.month}</span>
+                    <div className="h-4 flex-1 rounded bg-gray-100">
+                      <div
+                        className="h-4 rounded bg-indigo-400"
+                        style={{ width: `${(m.count / maxMonthCount) * 100}%` }}
+                      />
+                    </div>
+                    <span className="w-8 shrink-0 text-right text-xs text-gray-500">
+                      {m.count}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function StatCard({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white p-4">
+      <p className="text-xs font-medium text-gray-500">{label}</p>
+      <p className="mt-1 text-2xl font-semibold text-gray-900">{value}</p>
     </div>
   )
 }

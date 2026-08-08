@@ -38,6 +38,20 @@ export class AuthService {
       throw new ForbiddenException('Tài khoản đã bị khoá');
     }
 
+    // Phase 7.5 Đợt 4 — Super Admin vô hiệu hoá tenant chặn TOÀN BỘ user trong tenant đăng nhập.
+    // Super Admin có tenantId = null nên bỏ qua kiểm tra này với chính họ. Query riêng (thay vì
+    // include ngay trong findUnique ở trên) để không phải trộn thêm field `tenant` vào object
+    // `user` truyền cho `toPublicUser()` bên dưới.
+    if (user.tenantId) {
+      const tenant = await this.prisma.tenant.findUnique({
+        where: { id: user.tenantId },
+        select: { isDisabled: true },
+      });
+      if (tenant?.isDisabled) {
+        throw new ForbiddenException('Doanh nghiệp của bạn đã bị vô hiệu hoá');
+      }
+    }
+
     const payload: JwtPayload = {
       userId: user.id,
       tenantId: user.tenantId,

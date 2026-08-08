@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { usePublicTenant } from '../features/public/usePublicTenant'
 import { Spinner } from '../components/ui/Spinner'
@@ -39,8 +40,24 @@ export function PublicTenantPage() {
   const displayName = tenant.systemName || tenant.name
   const socialEntries = Object.entries(tenant.socialLinks).filter(([, url]) => url)
 
+  // Phase 7.5 Đợt 4 — tuỳ chỉnh background (ảnh ưu tiên hơn màu nếu Admin lỡ đặt cả 2, đúng như
+  // đã ghi chú ở SettingsPage.tsx). Không đụng `bg-gray-50` mặc định khi cả 2 đều chưa đặt.
+  const backgroundStyle: CSSProperties = tenant.landingBackgroundImageUrl
+    ? {
+        backgroundImage: `url(${tenant.landingBackgroundImageUrl})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundAttachment: 'fixed',
+      }
+    : tenant.landingBackgroundColor
+      ? { backgroundColor: tenant.landingBackgroundColor }
+      : {}
+
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div
+      className={`min-h-screen ${tenant.landingBackgroundImageUrl || tenant.landingBackgroundColor ? '' : 'bg-gray-50'}`}
+      style={backgroundStyle}
+    >
       <header
         className="flex items-center justify-between border-b border-gray-200 bg-white px-6 py-4"
         style={tenant.primaryColor ? { borderBottomColor: tenant.primaryColor } : undefined}

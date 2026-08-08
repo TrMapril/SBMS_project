@@ -14,7 +14,9 @@ export class PublicService {
       include: { config: true },
     });
     if (!tenant || !tenant.config) {
-      throw new NotFoundException('Không tìm thấy trang giới thiệu doanh nghiệp');
+      throw new NotFoundException(
+        'Không tìm thấy trang giới thiệu doanh nghiệp',
+      );
     }
 
     const config = tenant.config;
@@ -30,6 +32,8 @@ export class PublicService {
       contactPhone: config.contactPhone,
       contactEmail: config.contactEmail,
       socialLinks: config.socialLinks,
+      landingBackgroundColor: config.landingBackgroundColor,
+      landingBackgroundImageUrl: config.landingBackgroundImageUrl,
     };
   }
 }

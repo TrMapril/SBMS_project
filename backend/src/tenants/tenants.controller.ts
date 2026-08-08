@@ -19,6 +19,7 @@ import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
 import { UpdateTenantConfigDto } from './dto/update-tenant-config.dto';
 import { UpdateMaxEmployeesDto } from './dto/update-max-employees.dto';
+import { UpdateTenantStatusDto } from './dto/update-tenant-status.dto';
 import { CreateTenantAdminDto } from './dto/create-tenant-admin.dto';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -59,7 +60,10 @@ export class TenantsController {
   }
 
   @Roles('ADMIN')
-  @UseInterceptors(TenantInterceptor, FileInterceptor('file', { storage: memoryStorage() }))
+  @UseInterceptors(
+    TenantInterceptor,
+    FileInterceptor('file', { storage: memoryStorage() }),
+  )
   @Post('me/config/banner-images')
   addBannerImage(
     @CurrentTenant() tenantId: string,
@@ -88,6 +92,12 @@ export class TenantsController {
     return this.tenantsService.findAll(pagination);
   }
 
+  /** Dashboard Super Admin — đặt TRƯỚC @Get(':id') để Nest không khớp "stats" vào tham số :id. */
+  @Get('stats/overview')
+  getStatsOverview() {
+    return this.tenantsService.getStatsOverview();
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.tenantsService.findOne(id);
@@ -100,8 +110,17 @@ export class TenantsController {
 
   /** Phase 7.5 Đợt 1 mục F — kế thừa @Roles('SUPER_ADMIN') ở mức controller, không override. */
   @Patch(':id/max-employees')
-  updateMaxEmployees(@Param('id') id: string, @Body() dto: UpdateMaxEmployeesDto) {
+  updateMaxEmployees(
+    @Param('id') id: string,
+    @Body() dto: UpdateMaxEmployeesDto,
+  ) {
     return this.tenantsService.updateMaxEmployees(id, dto);
+  }
+
+  /** Phase 7.5 Đợt 4 — vô hiệu hoá/kích hoạt lại 1 tenant. */
+  @Patch(':id/status')
+  updateStatus(@Param('id') id: string, @Body() dto: UpdateTenantStatusDto) {
+    return this.tenantsService.updateStatus(id, dto);
   }
 
   @Delete(':id')

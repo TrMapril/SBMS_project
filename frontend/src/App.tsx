@@ -9,6 +9,7 @@ import { RolesPage } from './pages/RolesPage'
 import { CustomFieldsPage } from './pages/CustomFieldsPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { ProjectsPage } from './pages/ProjectsPage'
+import { TenantsPage } from './pages/TenantsPage'
 import { ProjectDetailPage } from './pages/ProjectDetailPage'
 import { AdminProjectDetailPage, AdminProjectsPage } from './pages/AdminProjectsPage'
 import { WorkflowsPage } from './pages/WorkflowsPage'
@@ -45,6 +46,16 @@ function App() {
         {/* Phase 7.5 Đợt 2 — gộp "Trang chủ" và "Dashboard" cũ thành 1 trang duy nhất, bỏ route
             /dashboard riêng (xem HomePage.tsx). */}
         <Route path="/" element={<HomePage />} />
+
+        {/* Phase 7.5 Đợt 4 — "Trang quản lý doanh nghiệp", chỉ Super Admin. */}
+        <Route
+          path="/tenants"
+          element={
+            <ProtectedRoute roles={['SUPER_ADMIN']}>
+              <TenantsPage />
+            </ProtectedRoute>
+          }
+        />
 
         {/* Phase 7.5 Đợt 3 (bổ sung sau test tay) — Manager xem được (read-only, UsersPage.tsx tự
             ẩn nút tạo/khoá/đổi role khi không phải Admin). */}

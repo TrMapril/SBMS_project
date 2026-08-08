@@ -13,6 +13,8 @@ export interface UpdateTenantConfigInput {
   contactPhone?: string
   contactEmail?: string
   socialLinks?: Record<string, string>
+  landingBackgroundColor?: string
+  landingBackgroundImageUrl?: string
 }
 
 export function useTenantConfig() {

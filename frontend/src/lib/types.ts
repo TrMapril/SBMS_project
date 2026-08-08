@@ -179,14 +179,39 @@ export interface TenantConfig {
   logoUrl: string | null
   enabledModules: string[]
   assignmentWeights: AssignmentWeights
+  maxEmployees: number | null
   introText: string | null
   bannerImages: string[]
   address: string | null
   contactPhone: string | null
   contactEmail: string | null
   socialLinks: Record<string, string>
+  landingBackgroundColor: string | null
+  landingBackgroundImageUrl: string | null
   createdAt: string
   updatedAt: string
+}
+
+// ---------- Phase 7.5 Đợt 4 (Super Admin) ----------
+
+export interface Tenant {
+  id: string
+  name: string
+  slug: string
+  isDisabled: boolean
+  userCount: number
+  maxEmployees: number | null
+  projectCount: number
+  lastActivityAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface TenantStatsOverview {
+  totalTenants: number
+  totalUsers: number
+  totalProjects: number
+  newTenantsByMonth: { month: string; count: number }[]
 }
 
 export interface CustomField {
@@ -300,6 +325,7 @@ export type NotificationEventType =
   | 'task:state-changed'
   | 'task:risk-alert'
   | 'leave-request:resolved'
+  | 'project-member:locked'
 
 export interface AppNotification {
   id: string
@@ -325,6 +351,8 @@ export interface PublicTenant {
   contactPhone: string | null
   contactEmail: string | null
   socialLinks: Record<string, string>
+  landingBackgroundColor: string | null
+  landingBackgroundImageUrl: string | null
 }
 
 export type LeaveRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED'

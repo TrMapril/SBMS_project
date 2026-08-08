@@ -1,4 +1,10 @@
-import { IsArray, IsObject, IsOptional, IsString, ValidateNested } from 'class-validator';
+import {
+  IsArray,
+  IsObject,
+  IsOptional,
+  IsString,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { AssignmentWeightsDto } from './assignment-weights.dto';
 
@@ -50,4 +56,14 @@ export class UpdateTenantConfigDto {
   @IsOptional()
   @IsObject()
   socialLinks?: Record<string, string>;
+
+  // Phase 7.5 Đợt 4 — tuỳ chỉnh background trang giới thiệu doanh nghiệp (màu HOẶC ảnh, dạng URL
+  // text giống logoUrl, không phải upload — nhất quán với cách logoUrl đã làm từ Giai đoạn 4).
+  @IsOptional()
+  @IsString()
+  landingBackgroundColor?: string;
+
+  @IsOptional()
+  @IsString()
+  landingBackgroundImageUrl?: string;
 }

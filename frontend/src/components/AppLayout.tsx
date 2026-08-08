@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/auth.store'
 import { NotificationBell } from './NotificationBell'
 import type { SystemRole } from '../lib/types'
@@ -18,8 +18,12 @@ interface NavItem {
 //   sidebar riêng để browse tự do.
 // Phase 7.5 Đợt 3 (bổ sung sau test tay) — Manager cũng thấy "Người dùng" (UsersPage.tsx tự ẩn
 // nút tạo/khoá/đổi role khi không phải Admin, chỉ xem + "Xem chi tiết").
+// Phase 7.5 Đợt 4 — Super Admin chỉ có 2 mục (Trang chủ + Quản lý doanh nghiệp), không thấy các
+// mục nghiệp vụ trong-tenant (Workflow/Đơn từ/Hồ sơ...) vì bản thân không thuộc tenant nào
+// (`tenantId = null`).
 const NAV_ITEMS: NavItem[] = [
-  { to: '/', label: 'Trang chủ', roles: ['ADMIN', 'MANAGER', 'EMPLOYEE'] },
+  { to: '/', label: 'Trang chủ', roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'EMPLOYEE'] },
+  { to: '/tenants', label: 'Quản lý doanh nghiệp', roles: ['SUPER_ADMIN'] },
   { to: '/workflows', label: 'Workflow', roles: ['ADMIN'] },
   { to: '/users', label: 'Người dùng', roles: ['ADMIN', 'MANAGER'] },
   { to: '/roles', label: 'Custom Role', roles: ['ADMIN'] },
@@ -34,9 +38,17 @@ const NAV_ITEMS: NavItem[] = [
 
 export function AppLayout() {
   const { user, logout } = useAuthStore()
+  const location = useLocation()
+  const navigate = useNavigate()
   if (!user) return null
 
   const items = NAV_ITEMS.filter((item) => item.roles.includes(user.systemRole))
+  // Phase 7.5 Đợt 4 — nút Back ở mọi "trang con", tức mọi route KHÔNG phải 1 trong các trang gốc
+  // theo sidebar của role hiện tại (đã lọc theo role ở `items`) — tự động đúng theo từng role mà
+  // không cần liệt kê thủ công danh sách "trang con" (ví dụ /workflows/:id, /projects/:id/board,
+  // /employees/:userId...), đúng tinh thần "không cần logic phức tạp" của phase_7_5.md.
+  const isRootPage = items.some((item) => item.to === location.pathname)
+  const showBackButton = !isRootPage
 
   return (
     <div className="flex min-h-screen bg-gray-50">
@@ -81,6 +93,14 @@ export function AppLayout() {
           </div>
         </header>
         <main className="flex-1 p-6">
+          {showBackButton && (
+            <button
+              onClick={() => navigate(-1)}
+              className="mb-4 inline-flex items-center gap-1 text-sm font-medium text-gray-500 hover:text-gray-800"
+            >
+              ← Quay lại
+            </button>
+          )}
           <Outlet />
         </main>
       </div>

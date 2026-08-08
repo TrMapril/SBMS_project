@@ -60,6 +60,10 @@ function SettingsForm({ config }: { config: TenantConfig }) {
   const [contactPhone, setContactPhone] = useState(config.contactPhone ?? '')
   const [contactEmail, setContactEmail] = useState(config.contactEmail ?? '')
   const [socialLinks, setSocialLinks] = useState<Record<string, string>>(config.socialLinks)
+  const [backgroundColor, setBackgroundColor] = useState(config.landingBackgroundColor ?? '')
+  const [backgroundImageUrl, setBackgroundImageUrl] = useState(
+    config.landingBackgroundImageUrl ?? '',
+  )
 
   function toggleModule(key: string) {
     setEnabledModules((prev) =>
@@ -86,6 +90,8 @@ function SettingsForm({ config }: { config: TenantConfig }) {
       contactPhone: contactPhone || undefined,
       contactEmail: contactEmail || undefined,
       socialLinks,
+      landingBackgroundColor: backgroundColor || undefined,
+      landingBackgroundImageUrl: backgroundImageUrl || undefined,
     })
   }
 
@@ -235,6 +241,38 @@ function SettingsForm({ config }: { config: TenantConfig }) {
                   </div>
                 ))}
               </div>
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">
+                Background — màu (hex)
+              </label>
+              <div className="flex items-center gap-2">
+                <Input
+                  value={backgroundColor}
+                  onChange={(e) => setBackgroundColor(e.target.value)}
+                  placeholder="#f9fafb"
+                  className="max-w-[160px]"
+                />
+                {backgroundColor && (
+                  <span
+                    className="h-8 w-8 shrink-0 rounded border border-gray-200"
+                    style={{ backgroundColor }}
+                  />
+                )}
+              </div>
+              <p className="mt-1 text-xs text-gray-400">
+                Chỉ áp dụng khi chưa đặt ảnh background bên dưới (ảnh được ưu tiên hơn).
+              </p>
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">
+                Background — ảnh (URL)
+              </label>
+              <Input
+                value={backgroundImageUrl}
+                onChange={(e) => setBackgroundImageUrl(e.target.value)}
+                placeholder="https://..."
+              />
             </div>
           </div>
         </div>

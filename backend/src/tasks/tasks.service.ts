@@ -98,22 +98,42 @@ export class TasksService {
    * transaction tạo Task (transaction rollback không nên phụ thuộc việc gửi notification). */
   private async notifyTaskAssigned(
     tenantId: string,
-    task: { id: string; title: string; assigneeId: string | null },
+    task: {
+      id: string;
+      title: string;
+      assigneeId: string | null;
+      projectId: string;
+    },
   ) {
     if (!task.assigneeId) return;
-    await this.notifications.notify(tenantId, task.assigneeId, 'task:assigned', {
-      taskId: task.id,
-      taskTitle: task.title,
-    });
+    await this.notifications.notify(
+      tenantId,
+      task.assigneeId,
+      'task:assigned',
+      {
+        taskId: task.id,
+        taskTitle: task.title,
+        // Phase 7.5 Đợt 4 — thêm projectId để FE điều hướng thẳng tới Task Board khi bấm notification
+        // (trước đó chỉ có taskId, không đủ để dựng URL /projects/:projectId/board).
+        projectId: task.projectId,
+      },
+    );
   }
 
-  async findAll(tenantId: string, query: ListTasksQueryDto, requester: JwtPayload) {
+  async findAll(
+    tenantId: string,
+    query: ListTasksQueryDto,
+    requester: JwtPayload,
+  ) {
     const { page, limit, projectId } = query;
     // Employee chỉ được xem Task của Project mình là thành viên/có Task được giao — không giới
     // hạn khi liệt kê KHÔNG kèm projectId vì trường hợp đó chưa xảy ra ở Task Board (luôn lọc
     // theo 1 project cụ thể), giữ đúng phạm vi lỗ hổng đã phát hiện.
     if (projectId) {
-      await this.projectsService.assertEmployeeCanAccessProject(projectId, requester);
+      await this.projectsService.assertEmployeeCanAccessProject(
+        projectId,
+        requester,
+      );
     }
     const where = { tenantId, ...(projectId ? { projectId } : {}) };
     const [data, total] = await this.prisma.$transaction([
@@ -202,7 +222,9 @@ export class TasksService {
       );
     }
     if (task.cancelledAt) {
-      throw new BadRequestException('Task đã bị huỷ và bị khoá, không thể chuyển trạng thái');
+      throw new BadRequestException(
+        'Task đã bị huỷ và bị khoá, không thể chuyển trạng thái',
+      );
     }
 
     return this.workflowEngine.transition({
@@ -228,7 +250,9 @@ export class TasksService {
       throw new NotFoundException('Không tìm thấy Task');
     }
     if (task.assigneeId !== userId) {
-      throw new ForbiddenException('Chỉ assignee của Task mới được Report Done');
+      throw new ForbiddenException(
+        'Chỉ assignee của Task mới được Report Done',
+      );
     }
     if (task.completedAt) {
       throw new BadRequestException('Task đã hoàn thành và bị khoá');
@@ -255,7 +279,9 @@ export class TasksService {
   /** Phase 7.5 Đợt 1 mục B — Manager "Xác nhận Done": khoá Task vĩnh viễn (completedAt), sau đó
    * kiểm tra xem Project có nên tự chuyển COMPLETED không (mục A). */
   async confirmDone(tenantId: string, taskId: string) {
-    const task = await this.prisma.task.findFirst({ where: { id: taskId, tenantId } });
+    const task = await this.prisma.task.findFirst({
+      where: { id: taskId, tenantId },
+    });
     if (!task) {
       throw new NotFoundException('Không tìm thấy Task');
     }
@@ -278,7 +304,9 @@ export class TasksService {
    * Khác với "Trả task"/Reset (đã có từ Đợt 1) vốn đưa hẳn về State bắt đầu (is_start) — ở đây chỉ
    * lùi lại đúng 1 bước để Employee sửa tiếp, không mất toàn bộ tiến độ trước đó. */
   async rejectDone(tenantId: string, taskId: string, managerId: string) {
-    const task = await this.prisma.task.findFirst({ where: { id: taskId, tenantId } });
+    const task = await this.prisma.task.findFirst({
+      where: { id: taskId, tenantId },
+    });
     if (!task) {
       throw new NotFoundException('Không tìm thấy Task');
     }
@@ -308,7 +336,9 @@ export class TasksService {
         },
       });
       if (updateResult.count === 0) {
-        throw new ConflictException('Task đã bị thay đổi bởi thao tác khác, thử lại');
+        throw new ConflictException(
+          'Task đã bị thay đổi bởi thao tác khác, thử lại',
+        );
       }
       await tx.taskHistory.create({
         data: {
@@ -332,22 +362,36 @@ export class TasksService {
    * (Report Done + Xác nhận Done), không quan tâm lịch sử đã qua tay ai trước đó — vì mọi truy vấn
    * phân tích (Thuật toán 1/2, hồ sơ năng lực) đều lọc theo `tasks.assignee_id` hiện tại chứ không
    * phải `task_history.action_by`, nên hành vi này tự nhiên đúng mà không cần thêm logic riêng. */
-  async updateAssignee(tenantId: string, taskId: string, dto: UpdateTaskAssigneeDto) {
-    const task = await this.prisma.task.findFirst({ where: { id: taskId, tenantId } });
+  async updateAssignee(
+    tenantId: string,
+    taskId: string,
+    dto: UpdateTaskAssigneeDto,
+  ) {
+    const task = await this.prisma.task.findFirst({
+      where: { id: taskId, tenantId },
+    });
     if (!task) {
       throw new NotFoundException('Không tìm thấy Task');
     }
     if (task.completedAt) {
-      throw new BadRequestException('Task đã hoàn thành và bị khoá, không thể đổi assignee');
+      throw new BadRequestException(
+        'Task đã hoàn thành và bị khoá, không thể đổi assignee',
+      );
     }
     if (task.cancelledAt) {
-      throw new BadRequestException('Task đã bị huỷ và bị khoá, không thể đổi assignee');
+      throw new BadRequestException(
+        'Task đã bị huỷ và bị khoá, không thể đổi assignee',
+      );
     }
     const member = await this.prisma.projectMember.findUnique({
-      where: { projectId_userId: { projectId: task.projectId, userId: dto.assigneeId } },
+      where: {
+        projectId_userId: { projectId: task.projectId, userId: dto.assigneeId },
+      },
     });
     if (!member) {
-      throw new BadRequestException('User không phải thành viên của Project này');
+      throw new BadRequestException(
+        'User không phải thành viên của Project này',
+      );
     }
 
     const updated = await this.prisma.task.update({
@@ -365,7 +409,9 @@ export class TasksService {
    * khi huỷ, Task huỷ có thể là Task cuối cùng còn PENDING của Project nên cũng cần kiểm tra lại
    * khả năng tự chuyển COMPLETED, giống hệt `confirmDone`. */
   async cancelTask(tenantId: string, taskId: string) {
-    const task = await this.prisma.task.findFirst({ where: { id: taskId, tenantId } });
+    const task = await this.prisma.task.findFirst({
+      where: { id: taskId, tenantId },
+    });
     if (!task) {
       throw new NotFoundException('Không tìm thấy Task');
     }

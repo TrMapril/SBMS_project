@@ -9,7 +9,10 @@ import {
 import { SystemRole, WorkflowTransition } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { TransitionCondition } from './types/transition-condition.type';
-import { WorkflowCacheService, WorkflowStructure } from './workflow-cache.service';
+import {
+  WorkflowCacheService,
+  WorkflowStructure,
+} from './workflow-cache.service';
 import { NotificationsService } from '../notifications/notifications.service';
 
 export interface TransitionParams {
@@ -197,7 +200,8 @@ export class WorkflowEngineService {
     if (requesterSystemRole === 'ADMIN') return;
 
     const allowRoles = (transition.allowRoles as string[]) ?? [];
-    const skipAssigneeCheck = allowRoles.length === 0 && task.assigneeId === null;
+    const skipAssigneeCheck =
+      allowRoles.length === 0 && task.assigneeId === null;
     if (skipAssigneeCheck) return;
 
     if (task.assigneeId !== userId) {
@@ -250,7 +254,12 @@ export class WorkflowEngineService {
    * assignee thì không có ai để báo, bỏ qua — không coi là lỗi. */
   private async onTransitionCompleted(
     tenantId: string,
-    task: { id: string; title: string; assigneeId: string | null },
+    task: {
+      id: string;
+      title: string;
+      assigneeId: string | null;
+      projectId: string;
+    },
     transition: WorkflowTransition,
     structure: WorkflowStructure,
   ) {
@@ -260,12 +269,19 @@ export class WorkflowEngineService {
 
     if (!task.assigneeId) return;
     const toState = structure.states.find((s) => s.id === transition.toStateId);
-    await this.notifications.notify(tenantId, task.assigneeId, 'task:state-changed', {
-      taskId: task.id,
-      taskTitle: task.title,
-      transitionName: transition.name,
-      toStateId: transition.toStateId,
-      toStateName: toState?.name ?? null,
-    });
+    await this.notifications.notify(
+      tenantId,
+      task.assigneeId,
+      'task:state-changed',
+      {
+        taskId: task.id,
+        taskTitle: task.title,
+        transitionName: transition.name,
+        toStateId: transition.toStateId,
+        toStateName: toState?.name ?? null,
+        // Phase 7.5 Đợt 4 — thêm projectId để FE điều hướng thẳng tới Task Board khi bấm notification.
+        projectId: task.projectId,
+      },
+    );
   }
 }

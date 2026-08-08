@@ -65,18 +65,31 @@ export class RiskScoreService {
         // không chỉ rõ người nhận.
         if (!managersByTenant.has(task.tenantId)) {
           const managers = await this.prisma.user.findMany({
-            where: { tenantId: task.tenantId, systemRole: { in: ['ADMIN', 'MANAGER'] } },
+            where: {
+              tenantId: task.tenantId,
+              systemRole: { in: ['ADMIN', 'MANAGER'] },
+            },
             select: { id: true },
           });
-          managersByTenant.set(task.tenantId, managers.map((m) => m.id));
+          managersByTenant.set(
+            task.tenantId,
+            managers.map((m) => m.id),
+          );
         }
         const recipients = managersByTenant.get(task.tenantId) ?? [];
         for (const managerId of recipients) {
-          await this.notifications.notify(task.tenantId, managerId, 'task:risk-alert', {
-            taskId: task.id,
-            taskTitle: task.title,
-            riskScore: Math.round(risk * 10) / 10,
-          });
+          await this.notifications.notify(
+            task.tenantId,
+            managerId,
+            'task:risk-alert',
+            {
+              taskId: task.id,
+              taskTitle: task.title,
+              riskScore: Math.round(risk * 10) / 10,
+              // Phase 7.5 Đợt 4 — thêm projectId để FE điều hướng thẳng tới Task Board.
+              projectId: task.projectId,
+            },
+          );
         }
       }
     }
@@ -145,7 +158,9 @@ export class RiskScoreService {
     fromStateId: string,
   ): Promise<number | null> {
     const [states, transitions] = await Promise.all([
-      this.prisma.workflowState.findMany({ where: { workflowId, isActive: true } }),
+      this.prisma.workflowState.findMany({
+        where: { workflowId, isActive: true },
+      }),
       this.prisma.workflowTransition.findMany({
         where: { workflowId, isActive: true },
       }),
@@ -185,7 +200,10 @@ export class RiskScoreService {
    * transition nào — ví dụ mới seed xong). Lọc theo `assigneeId` (Task đang giao cho ai), không
    * phải `actionBy` — cùng lý do với AssignmentSuggestionService: bước hoàn tất 1 Task nhiều khi
    * do Tester bấm chứ không phải assignee/Developer, lọc theo action_by sẽ thiếu dữ liệu. */
-  private async avgProcessingHours(tenantId: string, assigneeId?: string): Promise<number> {
+  private async avgProcessingHours(
+    tenantId: string,
+    assigneeId?: string,
+  ): Promise<number> {
     const durations = await this.analytics.computeDwellDurations({
       tenantId,
       assigneeId,

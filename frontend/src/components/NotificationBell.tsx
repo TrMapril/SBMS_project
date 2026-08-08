@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   useMarkAllNotificationsAsRead,
   useMarkNotificationAsRead,
   useNotifications,
 } from '../features/notifications/useNotifications'
 import { useNotificationSocket } from '../features/notifications/useNotificationSocket'
-import type { AppNotification } from '../lib/types'
+import { useAuthStore } from '../store/auth.store'
+import type { AppNotification, SystemRole } from '../lib/types'
 
 function describeNotification(notification: AppNotification): string {
   const data = notification.data as Record<string, unknown>
@@ -16,18 +18,60 @@ function describeNotification(notification: AppNotification): string {
       return `Task "${data.taskTitle ?? ''}" chuyển sang "${data.toStateName ?? ''}"`
     case 'task:risk-alert':
       return `Task "${data.taskTitle ?? ''}" có nguy cơ trễ deadline (${data.riskScore ?? '?'}%)`
+    case 'leave-request:resolved':
+      return `Đơn từ của bạn đã được xử lý (${data.status ?? ''})`
+    case 'project-member:locked':
+      return `Nhân sự "${data.userFullName ?? ''}" vừa bị khoá tài khoản`
     default:
       return notification.type
   }
 }
 
+/** Phase 7.5 Đợt 4 (tuỳ chọn) — bấm 1 notification điều hướng thẳng tới nội dung liên quan, không
+ * chỉ đánh dấu đã đọc. `/projects/:id/board` chỉ Manager/Employee vào được (ProtectedRoute) — Admin
+ * nhận `task:risk-alert` (xem RiskScoreService) được điều hướng tới `/admin/projects/:id` (bản
+ * read-only Admin có quyền xem) thay vì board. Thiếu `projectId` (dữ liệu cũ trước khi thêm field
+ * này) thì không điều hướng, chỉ đánh dấu đã đọc như cũ. */
+function notificationTarget(
+  notification: AppNotification,
+  systemRole: SystemRole,
+): string | null {
+  const data = notification.data as Record<string, unknown>
+  switch (notification.type) {
+    case 'task:assigned':
+    case 'task:state-changed':
+    case 'task:risk-alert': {
+      const projectId = data.projectId
+      if (typeof projectId !== 'string') return null
+      return systemRole === 'ADMIN' ? `/admin/projects/${projectId}` : `/projects/${projectId}/board`
+    }
+    case 'leave-request:resolved':
+      return '/leave-requests'
+    case 'project-member:locked':
+      return '/users'
+    default:
+      return null
+  }
+}
+
 export function NotificationBell() {
   useNotificationSocket()
+  const navigate = useNavigate()
+  const systemRole = useAuthStore((s) => s.user?.systemRole)
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const { data } = useNotifications()
   const markAsRead = useMarkNotificationAsRead()
   const markAllAsRead = useMarkAllNotificationsAsRead()
+
+  function handleNotificationClick(notification: AppNotification) {
+    if (!notification.isRead) markAsRead.mutate(notification.id)
+    const target = systemRole ? notificationTarget(notification, systemRole) : null
+    if (target) {
+      setOpen(false)
+      navigate(target)
+    }
+  }
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -89,9 +133,7 @@ export function NotificationBell() {
               data.data.map((notification) => (
                 <button
                   key={notification.id}
-                  onClick={() => {
-                    if (!notification.isRead) markAsRead.mutate(notification.id)
-                  }}
+                  onClick={() => handleNotificationClick(notification)}
                   className={`block w-full border-b border-gray-50 px-3 py-2 text-left text-sm hover:bg-gray-50 ${
                     notification.isRead ? 'text-gray-500' : 'font-medium text-gray-800'
                   }`}
