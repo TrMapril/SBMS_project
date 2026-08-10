@@ -121,7 +121,7 @@ export function AppLayout() {
           </div>
           <div className="flex items-center gap-3">
             {user.systemRole !== 'SUPER_ADMIN' && <PublicPageLink />}
-            <NotificationBell />
+            {user.systemRole !== 'SUPER_ADMIN' && <NotificationBell />}
             <button
               onClick={logout}
               className="text-sm font-medium text-gray-500 hover:text-gray-800"
