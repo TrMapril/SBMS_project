@@ -35,8 +35,6 @@ cấu hình do Admin tự thiết kế**, không phải logic hard-code trong �
 - **Thông báo thời gian thực** qua Socket.io, đơn từ nội bộ (nghỉ phép, trả công việc, loại đơn tuỳ
   chỉnh), hồ sơ năng lực nội bộ và đề xuất nhân sự.
 
-Danh sách đầy đủ 38 use case và đặc tả chi tiết: xem [`docs/phu_luc_2_use_case.md`](docs/phu_luc_2_use_case.md).
-
 ## Kiến trúc & Tech stack
 
 | Tầng | Công nghệ |
@@ -52,8 +50,6 @@ Danh sách đầy đủ 38 use case và đặc tả chi tiết: xem [`docs/phu_l
 | Scheduler | `@nestjs/schedule` (cron: risk score, phát hiện điểm nghẽn) |
 | Deploy | Vercel (frontend) + Render (backend) + Supabase (database) |
 
-Sơ đồ kiến trúc 3 lớp cách ly đa-tenant, ERD, Class Diagram, Sequence Diagram, Activity Diagram và
-Use Case Diagram đầy đủ: xem thư mục [`docs/`](docs/).
 
 ## Cấu trúc thư mục
 
@@ -133,8 +129,6 @@ npm run test:e2e     # end-to-end (multi-tenant isolation, HTTP security...)
 npm run test:cov      # coverage
 ```
 
-Báo cáo kết quả kiểm thử chi tiết: [`backend/TEST_REPORT.md`](backend/TEST_REPORT.md).
-
 ## Triển khai
 
 Ứng dụng được triển khai theo mô hình 3 tầng tách biệt, có cơ chế UptimeRobot ping định kỳ để giữ
@@ -144,4 +138,4 @@ gói miễn phí Render/Supabase luôn "ấm":
 - **Backend**: Render — build từ thư mục `backend/`, biến môi trường theo `.env.example`
 - **Database & Storage**: Supabase
 
-> Điền URL thật sau khi deploy: Frontend `sbms-project.vercel.app` · Backend `sbms-backend-8gf1.onrender.com/api/health`
+URL thật sau khi deploy: Frontend `sbms-project.vercel.app` · Backend `sbms-backend-8gf1.onrender.com/api/health`
